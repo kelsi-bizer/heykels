@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HeyKels — AI-native search</title>
+<style>
+/* ───────────────────────── tokens ───────────────────────── */
+:root{
+  --sans: "Google Sans", "Product Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --g1:#4285f4; --g2:#9b72cb; --g3:#d96570;
+  --brand: linear-gradient(74deg, var(--g1) 0%, var(--g2) 45%, var(--g3) 90%);
+  --r-sm:8px; --r-md:16px; --r-lg:24px; --r-xl:32px;
+  --sidebar-w:288px; --rail-w:72px;
+}
+:root[data-theme="dark"]{
+  --bg:#1b1c1d; --sidebar:#1e1f20; --surface:#282a2c; --surface-2:#333537;
+  --hover:#37393b; --text:#e3e3e3; --text-dim:#c4c7c5; --text-mute:#8e918f;
+  --border:#3c4043; --input:#1e1f20; --chip:#282a2c; --ok:#7cd992; --warn:#f6c26b;
+  --shadow:0 2px 12px rgba(0,0,0,.45);
+}
+:root[data-theme="light"]{
+  --bg:#ffffff; --sidebar:#f0f4f9; --surface:#f0f4f9; --surface-2:#e9eef6;
+  --hover:#dde3ea; --text:#1f1f1f; --text-dim:#444746; --text-mute:#5f6368;
+  --border:#c4c7c5; --input:#f0f4f9; --chip:#f0f4f9; --ok:#0d652d; --warn:#a1670a;
+  --shadow:0 2px 12px rgba(0,0,0,.10);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--sans); font-size:15px; line-height:1.6;
+  -webkit-font-smoothing:antialiased; overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ───────────────────────── shell ───────────────────────── */
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* sidebar */
+.sidebar{
+  width:var(--sidebar-w); flex:0 0 var(--sidebar-w); background:var(--sidebar);
+  display:flex; flex-direction:column; padding:12px 8px;
+  transition:width .2s ease, flex-basis .2s ease; overflow:hidden;
+}
+.app.rail .sidebar{width:var(--rail-w); flex-basis:var(--rail-w)}
+.icon-btn{
+  width:40px;height:40px;border-radius:50%;display:grid;place-items:center;
+  color:var(--text-dim); flex:0 0 40px; transition:background .15s;
+}
+.icon-btn:hover{background:var(--hover)}
+.sb-top{display:flex;align-items:center;gap:4px;padding:0 4px 6px}
+.new-btn{
+  display:flex;align-items:center;gap:12px;margin:6px 4px 18px;padding:10px 16px;
+  background:var(--surface-2);border-radius:999px;color:var(--text);
+  font-size:14px;font-weight:500;white-space:nowrap;transition:background .15s;
+  align-self:flex-start;
+}
+.new-btn:hover{background:var(--hover)}
+.app.rail .new-btn{padding:10px;border-radius:50%}
+.app.rail .new-btn .lbl{display:none}
+.sb-head{
+  font-size:14px;color:var(--text-dim);padding:6px 16px 4px;font-weight:500;white-space:nowrap;
+}
+.sb-list{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0}
+.sb-item{
+  display:flex;align-items:center;gap:12px;padding:8px 14px;margin:1px 0;border-radius:999px;
+  color:var(--text-dim);font-size:14px;white-space:nowrap;width:100%;text-align:left;
+  transition:background .15s;
+}
+.sb-item:hover{background:var(--hover);color:var(--text)}
+.sb-item.active{background:var(--surface-2);color:var(--text)}
+.sb-item .t{overflow:hidden;text-overflow:ellipsis}
+.app.rail .sb-head,.app.rail .sb-item .t{display:none}
+.sb-foot{border-top:1px solid var(--border);padding-top:8px;margin-top:8px}
+
+/* main */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 18px;gap:12px}
+.brand-pill{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:var(--r-sm);font-size:19px;color:var(--text-dim);transition:background .15s}
+.brand-pill:hover{background:var(--hover)}
+.badge{font-size:11px;color:var(--text-mute);border:1px solid var(--border);padding:2px 8px;border-radius:999px;letter-spacing:.02em}
+.top-right{display:flex;align-items:center;gap:8px}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--brand);display:grid;place-items:center;font-size:13px;font-weight:600;color:#fff}
+
+.scroll{flex:1;overflow-y:auto;padding:0 20px}
+.wrap{max-width:768px;margin:0 auto;padding-bottom:24px}
+
+/* greeting */
+.hero{padding:14vh 0 0}
+.hello{font-size:clamp(34px,5.2vw,52px);font-weight:500;letter-spacing:-.5px;line-height:1.15;margin:0}
+.hello .grad{
+  display:inline-block;
+  background:linear-gradient(92deg,var(--g1) 0%,var(--g2) 52%,var(--g3) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.hello .sub{display:block;color:var(--text-mute);font-size:clamp(22px,3vw,32px);margin-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:34px}
+.chip{
+  border:1px solid var(--border);border-radius:12px;padding:12px 16px;font-size:13.5px;
+  color:var(--text-dim);max-width:260px;text-align:left;line-height:1.4;transition:background .15s,border-color .15s;
+}
+.chip:hover{background:var(--hover);border-color:var(--text-mute)}
+
+/* composer */
+.composer-dock{padding:8px 20px 20px;background:linear-gradient(to top,var(--bg) 62%,transparent)}
+.composer{
+  max-width:768px;margin:0 auto;background:var(--input);border:1px solid var(--border);
+  border-radius:var(--r-xl);padding:6px 8px 6px 18px;display:flex;align-items:flex-end;gap:6px;
+  transition:border-color .15s,box-shadow .15s;
+}
+.composer:focus-within{border-color:var(--text-mute);box-shadow:var(--shadow)}
+.composer textarea{
+  flex:1;background:none;border:0;outline:0;color:var(--text);font:inherit;resize:none;
+  padding:14px 0;max-height:180px;min-height:26px;line-height:1.5;
+}
+.composer textarea::placeholder{color:var(--text-mute)}
+.send{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);color:var(--text-mute);transition:.15s;flex:0 0 40px}
+.send.on{background:var(--g1);color:#fff}
+.send.on:hover{filter:brightness(1.1)}
+.foot-note{max-width:768px;margin:8px auto 0;text-align:center;font-size:11.5px;color:var(--text-mute)}
+
+/* turn */
+.turn{margin-top:26px}
+.q{display:flex;gap:14px;align-items:flex-start;justify-content:flex-end;margin-bottom:22px}
+.q .txt{background:var(--surface);border-radius:var(--r-lg);padding:12px 18px;max-width:78%;font-size:15px}
+.a{display:flex;gap:16px;align-items:flex-start}
+.spark{width:30px;height:30px;flex:0 0 30px;margin-top:2px}
+.spark.spin{animation:spin 1.6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.a-body{flex:1;min-width:0}
+
+/* process panel */
+.proc{border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:18px;overflow:hidden;background:color-mix(in srgb,var(--surface) 45%,transparent)}
+.proc-head{display:flex;align-items:center;gap:10px;padding:11px 14px;width:100%;text-align:left;font-size:13.5px;color:var(--text-dim)}
+.proc-head:hover{background:var(--hover)}
+.proc-head .caret{margin-left:auto;transition:transform .2s}
+.proc.open .caret{transform:rotate(180deg)}
+.proc-body{display:none;padding:4px 14px 14px;border-top:1px solid var(--border)}
+.proc.open .proc-body{display:block}
+.legs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+@media(max-width:640px){.legs{grid-template-columns:1fr}}
+.leg{border:1px solid var(--border);border-radius:12px;padding:11px 13px;background:var(--bg)}
+.leg-t{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:500;color:var(--text-dim);margin-bottom:7px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--text-mute);flex:0 0 7px}
+.dot.run{background:var(--g1);animation:pulse 1s ease-in-out infinite}
+.dot.done{background:var(--ok)}
+.dot.skip{background:var(--warn)}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.leg-out{font-size:12px;color:var(--text-mute);line-height:1.55;font-family:var(--mono)}
+.leg-out div{padding:1.5px 0;opacity:0;animation:fade .28s ease forwards}
+@keyframes fade{to{opacity:1}}
+.merge{display:flex;align-items:center;gap:9px;justify-content:center;margin:12px 0 4px;font-size:12px;color:var(--text-mute)}
+.merge .bar{height:1px;flex:1;background:var(--border)}
+.sandbox{border:1px dashed var(--border);border-radius:10px;padding:9px 12px;font-size:12px;color:var(--text-dim);text-align:center;font-family:var(--mono)}
+
+/* answer content */
+.md{font-size:15.5px;line-height:1.72;color:var(--text)}
+.md h3{font-size:16.5px;font-weight:500;margin:22px 0 8px}
+.md p{margin:0 0 14px}
+.md ul{margin:0 0 14px;padding-left:22px}
+.md li{margin:6px 0}
+.md strong{font-weight:600}
+.md code{background:var(--surface-2);padding:2px 6px;border-radius:5px;font-family:var(--mono);font-size:13px}
+.cite{
+  display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin:0 1px;
+  border-radius:5px;background:var(--surface-2);color:var(--text-dim);
+  font-size:10.5px;vertical-align:2px;font-family:var(--mono);cursor:pointer;
+}
+.cite:hover{background:var(--g1);color:#fff}
+.caret-blink{display:inline-block;width:8px;height:16px;background:var(--text-dim);vertical-align:-3px;animation:bl .9s steps(2) infinite}
+@keyframes bl{0%,50%{opacity:1}51%,100%{opacity:0}}
+
+/* sources + memory */
+.srcs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 4px}
+.src{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:7px 11px;font-size:12px;color:var(--text-dim);max-width:230px;transition:background .15s}
+.src:hover{background:var(--hover)}
+.fav{width:15px;height:15px;border-radius:4px;flex:0 0 15px;display:grid;place-items:center;font-size:9px;color:#fff;font-weight:700}
+.src .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mem-pill{display:inline-flex;align-items:center;gap:8px;margin-top:14px;padding:7px 13px;border-radius:999px;background:color-mix(in srgb,var(--g2) 15%,transparent);border:1px solid color-mix(in srgb,var(--g2) 35%,transparent);font-size:12.5px;color:var(--text-dim)}
+.acts{display:flex;gap:2px;margin-top:12px}
+.act{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:var(--text-mute);transition:background .15s}
+.act:hover{background:var(--hover);color:var(--text)}
+.act.hit{color:var(--g1)}
+
+/* tool card */
+.tool{border:1px solid color-mix(in srgb,var(--warn) 45%,var(--border));border-radius:var(--r-md);margin:18px 0;overflow:hidden;background:color-mix(in srgb,var(--warn) 7%,transparent)}
+.tool-h{display:flex;align-items:center;gap:10px;padding:12px 15px;font-size:13.5px;font-weight:500;border-bottom:1px solid var(--border)}
+.tool-b{padding:14px 15px}
+.kv{display:grid;grid-template-columns:80px 1fr;gap:6px 14px;font-size:13px;margin-bottom:12px}
+.kv dt{color:var(--text-mute)}
+.kv dd{margin:0;color:var(--text-dim);white-space:pre-wrap;word-break:break-word}
+.tool-a{display:flex;gap:9px}
+.btn{padding:8px 18px;border-radius:999px;font-size:13.5px;font-weight:500;transition:.15s}
+.btn.p{background:var(--g1);color:#fff}
+.btn.p:hover{filter:brightness(1.1)}
+.btn.s{border:1px solid var(--border);color:var(--text-dim)}
+.btn.s:hover{background:var(--hover)}
+.verdict{font-size:13px;padding:10px 15px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px}
+
+/* memory + settings pages */
+.page-h{font-size:26px;font-weight:500;margin:26px 0 6px}
+.page-s{color:var(--text-mute);font-size:14px;margin-bottom:24px}
+.doc{border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:12px;overflow:hidden}
+.doc-h{display:flex;align-items:center;gap:12px;padding:13px 16px;width:100%;text-align:left}
+.doc-h:hover{background:var(--hover)}
+.doc-p{font-family:var(--mono);font-size:13px;color:var(--text)}
+.doc-m{margin-left:auto;font-size:11.5px;color:var(--text-mute);white-space:nowrap}
+.tag{font-size:10.5px;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-dim)}
+.doc-b{display:none;border-top:1px solid var(--border);padding:14px 16px;background:var(--bg)}
+.doc.open .doc-b{display:block}
+.doc-b pre{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--text-dim);white-space:pre-wrap}
+.fm{color:var(--g2)}
+.row{display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:var(--r-md);padding:15px 17px;margin-bottom:11px}
+.row .g{flex:1;min-width:0}
+.row .n{font-size:14.5px}
+.row .d{font-size:12.5px;color:var(--text-mute);margin-top:2px}
+.pill-ok{font-size:11.5px;padding:4px 11px;border-radius:999px;background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok);white-space:nowrap}
+.pill-no{font-size:11.5px;padding:4px 11px;border-radius:999px;background:var(--surface-2);color:var(--text-mute);white-space:nowrap}
+.banner{display:flex;align-items:center;gap:12px;border:1px solid color-mix(in srgb,var(--warn) 45%,var(--border));background:color-mix(in srgb,var(--warn) 9%,transparent);border-radius:var(--r-md);padding:13px 16px;margin-bottom:20px;font-size:13.5px;color:var(--text-dim)}
+.scopes{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.scope{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:6px;background:var(--surface-2);color:var(--text-dim)}
+.scope.r{color:var(--g3)}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ══════════ sidebar ══════════ -->
+  <aside class="sidebar">
+    <div class="sb-top">
+      <button class="icon-btn" id="railBtn" title="Collapse menu" aria-label="Toggle menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
+      </button>
+    </div>
+
+    <button class="new-btn" id="newBtn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+      <span class="lbl">New Search</span>
+    </button>
+
+    <div class="sb-list">
+      <div class="sb-head">Recent</div>
+      <div id="recent"></div>
+    </div>
+
+    <div class="sb-foot">
+      <button class="sb-item" data-view="memory">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm10 1.5V10h4.5L14 5.5zM7 12h10v1.6H7V12zm0 3.4h10V17H7v-1.6z"/></svg>
+        <span class="t">Memory</span>
+      </button>
+      <button class="sb-item" data-view="connections">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8.9 4a8.9 8.9 0 0 1-.1 1.3l2.1 1.6-2 3.5-2.5-1a9 9 0 0 1-2.2 1.3l-.4 2.6h-4l-.4-2.6a9 9 0 0 1-2.2-1.3l-2.5 1-2-3.5 2.1-1.6a9 9 0 0 1 0-2.6L1.7 8.1l2-3.5 2.5 1a9 9 0 0 1 2.2-1.3L8.8 1.7h4l.4 2.6a9 9 0 0 1 2.2 1.3l2.5-1 2 3.5-2.1 1.6c.06.43.1.86.1 1.3z"/></svg>
+        <span class="t">Connections</span>
+      </button>
+      <button class="sb-item" id="themeBtn">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+        <span class="t">Toggle theme</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ══════════ main ══════════ -->
+  <main class="main">
+    <div class="topbar">
+      <button class="brand-pill">
+        HeyKels
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+      </button>
+      <div class="top-right">
+        <span class="badge">gemini-3.5-flash</span>
+        <div class="avatar">K</div>
+      </div>
+    </div>
+
+    <div class="scroll" id="scroll">
+      <div class="wrap">
+
+        <!-- search view -->
+        <section id="v-search">
+          <div class="hero" id="hero">
+            <h1 class="hello"><span class="grad">Hello, Kelsi</span><span class="sub">What are we looking into?</span></h1>
+            <div class="chips" id="chips"></div>
+          </div>
+          <div id="turns"></div>
+        </section>
+
+        <!-- memory view -->
+        <section id="v-memory" class="hide">
+          <h1 class="page-h">Memory</h1>
+          <p class="page-s">Markdown files in <strong>Drive › HeyKels Memory</strong>. You own them — edit or delete any file directly in Drive and the next search reflects it.</p>
+          <div id="docs"></div>
+        </section>
+
+        <!-- connections view -->
+        <section id="v-connections" class="hide">
+          <h1 class="page-h">Connections</h1>
+          <p class="page-s">HeyKels acts in your Workspace only with your approval, and every write is confirmed before it runs.</p>
+          <div class="banner">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" style="flex:0 0 19px"><path d="M12 2 1 21h22L12 2zm1 14h-2v2h2v-2zm0-7h-2v5h2V9z"/></svg>
+            <div>While the OAuth app is unverified, Google expires refresh tokens every <strong>7 days</strong>. You'll be asked to reconnect roughly weekly until verification completes.</div>
+          </div>
+          <div id="conns"></div>
+          <div class="row" style="display:block">
+            <div class="n" style="margin-bottom:4px">Granted scopes</div>
+            <div class="d">Requested incrementally — sign-in asks for none of these.</div>
+            <div class="scopes" id="scopes"></div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- composer -->
+    <div class="composer-dock" id="dock">
+      <div class="composer">
+        <textarea id="ta" rows="1" placeholder="Ask HeyKels"></textarea>
+        <button class="send" id="send" aria-label="Send">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-6l8-2.5-8-2.5v-6L21 12 3 20.5z"/></svg>
+        </button>
+      </div>
+      <div class="foot-note">Two searches run in parallel — the live web and your own memory — then merge into one answer.</div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ═══════════════════ canned data ═══════════════════ */
+const RECENT = [
+  "Best AI-native search engines in 2026",
+  "Q3 planning offsite venues in Austin",
+  "How Gemini grounding citations work",
+  "Tailwind v4 migration gotchas"
+];
+
+const CHIPS = [
+  "What's new in AI-native search this month?",
+  "Draft an email to the team about our launch",
+  "Summarize my notes on the HeyKels architecture",
+  "Find a time next week for a design review"
+];
+
+const DOCS = [
+  { path:"profile/basics.md", tags:["profile"], upd:"2 days ago", body:
+`---
+id: profile/basics
+title: Kelsi — basics
+tags: [profile]
+updated: 2026-08-14T09:12:00Z
+confidence: 0.95
+---
+## Summary
+Founder working on HeyKels, an AI-native search engine. Based in Austin, TX.
+
+## Facts
+- Works at Bizer; email kelsi@gobizer.com
+- Timezone America/Chicago
+- Prefers concise, technical answers with sources over prose
+
+## Open questions
+- Team size for the launch push?` },
+  { path:"interests/ai-search.md", tags:["ai","search","agents"], upd:"4 hours ago", body:
+`---
+id: interests/ai-search
+title: AI search & agent tooling
+tags: [ai, search, agents]
+updated: 2026-08-16T11:02:00Z
+confidence: 0.82
+---
+## Summary
+Tracking AI-native search products and how they handle memory and grounding.
+
+## Facts
+- Compares products on memory persistence, not just answer quality
+- Skeptical of cookie/keyword personalization; prefers explicit user-owned context
+- Referenced OpenClaw and Nous Hermes as the model for markdown agent memory
+
+## Open questions
+- Does citation quality degrade with structured output? (yes — see notes)` },
+  { path:"projects/heykels.md", tags:["project","architecture"], upd:"1 hour ago", body:
+`---
+id: projects/heykels
+title: HeyKels architecture
+tags: [project, architecture]
+updated: 2026-08-16T14:40:00Z
+confidence: 0.9
+---
+## Summary
+Search box is an agent. Two parallel legs (web + memory) merge in a sandbox,
+a third model synthesizes, then Workspace tools can act.
+
+## Facts
+- Model: gemini-3.5-flash for every role
+- Memory persists as markdown in the user's own Google Drive
+- Write actions always require explicit user confirmation
+
+## Open questions
+- Verification/CASA timeline for the restricted Gmail + Drive scopes` },
+  { path:"entities/people.md", tags:["people","crm"], upd:"3 days ago", body:
+`---
+id: entities/people
+title: People
+tags: [people, crm]
+updated: 2026-08-13T16:20:00Z
+confidence: 0.7
+---
+## Facts
+- Dana Whitfield — design lead, reviews UI work
+- Marcus Ford — infra, owns the Postgres + deploy story
+- Priya Raman — GTM, wants launch messaging by end of Q3` }
+];
+
+const CONNS = [
+  { n:"Gmail", d:"Search, read, draft, and send on your behalf", ok:true },
+  { n:"Google Calendar", d:"Read your schedule and create events", ok:true },
+  { n:"Google Drive", d:"Search and read your files; store memory documents", ok:true },
+  { n:"Docs & Sheets", d:"Read and write documents and spreadsheets", ok:true },
+  { n:"Gmail — send as alias", d:"Not requested", ok:false }
+];
+
+const SCOPES = [
+  ["gmail.modify", true], ["drive.readonly", true], ["drive.file", false],
+  ["calendar.events", false], ["documents", false], ["spreadsheets", false]
+];
+
+/* scenario library — keyed by intent detected in the query */
+const SCENARIOS = {
+  email: {
+    web: ["querying google_search…", "3 results · launch messaging", "url_context → 1 page read", "✓ grounded"],
+    mem: ["retrieve() → 3 docs", "entities/people.md", "preferences/writing-style.md", "projects/heykels.md", "✓ 6 facts"],
+    answer:
+`I pulled the launch details from your HeyKels notes and matched the tone you've used in past updates — short, concrete, no hype [1].
+
+Here's the draft I'd send to Dana, Marcus, and Priya:
+
+**Subject:** HeyKels — parallel search is working end to end
+
+Team — the two-leg pipeline is live. A query now fans out to a web-grounded call and a memory-grounded call at the same time, and a third model merges them into one answer. Memory persists as markdown in your own Drive, so there's nothing hidden to audit.
+
+Next up is the Workspace tool loop. Shout if you want a walkthrough before Thursday.
+
+I've prepared it as a draft — nothing is sent until you approve it below.`,
+    srcs: [["Bizer internal notes","B","#4285f4"],["HeyKels architecture memo","H","#9b72cb"]],
+    tool: {
+      name:"gmail_create_draft",
+      args:[["To","dana@gobizer.com, marcus@gobizer.com, priya@gobizer.com"],
+            ["Subject","HeyKels — parallel search is working end to end"],
+            ["Body","Team — the two-leg pipeline is live. A query now fans out to a web-grounded call and a memory-grounded call at the same time…"]],
+      okMsg:"Draft created in Gmail. Nothing was sent.",
+      noMsg:"Discarded — no draft was created. Want me to rewrite it in a different tone?"
+    },
+    mem_upd:"entities/people.md"
+  },
+  calendar: {
+    web:["querying google_search…","(no web grounding needed)","✓ skipped"],
+    mem:["retrieve() → 2 docs","profile/basics.md → TZ America/Chicago","entities/people.md","✓ 4 facts"],
+    answer:
+`Reading your calendar, Tuesday and Wednesday afternoon are both clear. Dana usually reviews design work midweek, so **Wednesday 2:00–3:00 PM CT** is the better fit [1].
+
+I can put it on the calendar and invite Dana — confirm below and I'll create it.`,
+    srcs:[["Google Calendar","G","#4285f4"]],
+    tool:{
+      name:"calendar_create_event",
+      args:[["Title","HeyKels design review"],["When","Wed 20 Aug 2026, 2:00–3:00 PM CT"],["Guests","dana@gobizer.com"]],
+      okMsg:"Event created and Dana invited.",
+      noMsg:"Nothing was added to your calendar."
+    },
+    mem_upd:"profile/basics.md"
+  },
+  notes: {
+    web:["querying google_search…","(memory-first query)","✓ skipped"],
+    mem:["retrieve() → 3 docs","projects/heykels.md","interests/ai-search.md","profile/basics.md","✓ 11 facts"],
+    answer:
+`Here's where the HeyKels architecture stands, from your own notes [1]:
+
+### The pipeline
+Every query fans out to two calls at once. One is **web-grounded** through Google Search; the other searches **your memory** — markdown files in your Drive. Both land in a sandbox, and a third model merges them into a single answer [1].
+
+### What's settled
+- \`gemini-3.5-flash\` for all four roles
+- Memory lives in your Drive as \`.md\` files, so you can read and edit it directly
+- Every write action needs explicit confirmation before it runs
+
+### What's still open
+- Verification and CASA timing for the restricted Gmail and Drive scopes [2]
+
+One thing worth flagging: your notes record that forcing JSON output on the web leg **breaks citation offsets**, which is why that leg returns plain text.`,
+    srcs:[["projects/heykels.md","M","#9b72cb"],["interests/ai-search.md","M","#9b72cb"]],
+    tool:null,
+    mem_upd:"projects/heykels.md"
+  },
+  general: {
+    web:["querying google_search…","6 results · ranked","url_context → 2 pages read","✓ grounded, 4 citations"],
+    mem:["retrieve() → 2 docs","interests/ai-search.md","profile/basics.md","✓ 5 facts"],
+    answer:
+`Short version: the field split this year between products that *retrieve* and products that *remember* [1][2].
+
+### What changed
+Grounded answers became table stakes — nearly everyone now cites live sources inline [1]. The real differentiator moved to **persistent context**: whether the engine carries anything forward between sessions [2].
+
+### Why this matters for you
+You've been comparing these on memory persistence rather than raw answer quality, and that's the axis that's actually moving [3]. Most incumbents still personalize from click history and cookies — inferred, invisible, and not yours to inspect.
+
+The approach in your own notes is the opposite: memory as **plain markdown you can open, edit, and delete**. That's a meaningfully different bet, and it's the one that stays legible as the corpus grows.
+
+### Worth watching
+- Grounding quality degrades when structured output is forced — a real constraint, not a tuning issue
+- Agentic actions on top of search are where the next round of differentiation lands [4]`,
+    srcs:[["ai.google.dev — grounding","G","#4285f4"],["The Verge — AI search 2026","V","#d96570"],["interests/ai-search.md","M","#9b72cb"],["Simon Willison's blog","S","#f6c26b"]],
+    tool:null,
+    mem_upd:"interests/ai-search.md"
+  }
+};
+
+function pick(q){
+  const s = q.toLowerCase();
+  if(/\b(email|draft|write to|send|message)\b/.test(s)) return SCENARIOS.email;
+  if(/\b(calendar|meeting|schedule|time|invite|book)\b/.test(s)) return SCENARIOS.calendar;
+  if(/\b(my notes|architecture|heykels|summar)\b/.test(s)) return SCENARIOS.notes;
+  return SCENARIOS.general;
+}
+
+/* ═══════════════════ helpers ═══════════════════ */
+const $ = s => document.querySelector(s);
+const el = (t,c,h) => { const n=document.createElement(t); if(c)n.className=c; if(h!=null)n.innerHTML=h; return n; };
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const esc = s => s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+const SPARK = `<svg class="spark" viewBox="0 0 24 24"><defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4285f4"/><stop offset=".5" stop-color="#9b72cb"/><stop offset="1" stop-color="#d96570"/></linearGradient></defs><path fill="url(#sg)" d="M12 2l2.2 6.1L20.5 10l-6.3 1.9L12 18l-2.2-6.1L3.5 10l6.3-1.9L12 2z"/></svg>`;
+
+/* minimal markdown → html, with [n] citations */
+function md(src){
+  const lines = src.split("\n");
+  let out="", inUl=false;
+  const inline = t => esc(t)
+    .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+    .replace(/`(.+?)`/g,"<code>$1</code>")
+    .replace(/\[(\d+)\]/g,'<span class="cite">$1</span>');
+  for(const ln of lines){
+    if(/^### /.test(ln)){ if(inUl){out+="</ul>";inUl=false} out+=`<h3>${inline(ln.slice(4))}</h3>`; continue }
+    if(/^[-*] /.test(ln)){ if(!inUl){out+="<ul>";inUl=true} out+=`<li>${inline(ln.slice(2))}</li>`; continue }
+    if(inUl){out+="</ul>";inUl=false}
+    if(ln.trim()==="") continue;
+    out += `<p>${inline(ln)}</p>`;
+  }
+  if(inUl) out+="</ul>";
+  return out;
+}
+
+/* ═══════════════════ render sidebar / pages ═══════════════════ */
+RECENT.forEach((t,i)=>{
+  const b = el("button","sb-item"+(i===0?"":""),
+    `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 1-9 9h2a7 7 0 1 0 7-7v3L8 5l4-4v2z"/></svg><span class="t">${esc(t)}</span>`);
+  b.onclick = ()=>{ show("search"); ask(t); };
+  $("#recent").appendChild(b);
+});
+
+CHIPS.forEach(t=>{
+  const b = el("button","chip",esc(t));
+  b.onclick = ()=>ask(t);
+  $("#chips").appendChild(b);
+});
+
+DOCS.forEach(d=>{
+  const box = el("div","doc");
+  const head = el("button","doc-h",
+    `<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="flex:0 0 17px;color:var(--g2)"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm10 1.5V10h4.5L14 5.5z"/></svg>
+     <span class="doc-p">${esc(d.path)}</span>
+     ${d.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join("")}
+     <span class="doc-m">${esc(d.upd)}</span>`);
+  const body = el("div","doc-b",`<pre>${esc(d.body).replace(/^(---[\s\S]*?---)/,'<span class="fm">$1</span>')}</pre>`);
+  head.onclick = ()=>box.classList.toggle("open");
+  box.append(head,body);
+  $("#docs").appendChild(box);
+});
+
+CONNS.forEach(c=>{
+  $("#conns").appendChild(el("div","row",
+    `<div class="g"><div class="n">${esc(c.n)}</div><div class="d">${esc(c.d)}</div></div>
+     <span class="${c.ok?'pill-ok':'pill-no'}">${c.ok?'Connected':'Not requested'}</span>`));
+});
+
+SCOPES.forEach(([s,r])=>{
+  $("#scopes").appendChild(el("span","scope"+(r?" r":""), esc(s)+(r?" · restricted":"")));
+});
+
+/* ═══════════════════ views ═══════════════════ */
+function show(v){
+  ["search","memory","connections"].forEach(n=>
+    $("#v-"+n).classList.toggle("hide", n!==v));
+  $("#dock").classList.toggle("hide", v!=="search");
+  document.querySelectorAll(".sb-item[data-view]").forEach(b=>
+    b.classList.toggle("active", b.dataset.view===v));
+  $("#scroll").scrollTop = 0;
+}
+document.querySelectorAll(".sb-item[data-view]").forEach(b=>
+  b.onclick = ()=>show(b.dataset.view));
+
+$("#railBtn").onclick = ()=>$("#app").classList.toggle("rail");
+$("#themeBtn").onclick = ()=>{
+  const r = document.documentElement;
+  r.dataset.theme = r.dataset.theme==="dark" ? "light" : "dark";
+};
+$("#newBtn").onclick = ()=>{
+  show("search");
+  $("#turns").innerHTML = "";
+  $("#hero").classList.remove("hide");
+  $("#ta").value = ""; sync();
+};
+
+/* ═══════════════════ composer ═══════════════════ */
+const ta = $("#ta"), sendBtn = $("#send");
+function sync(){
+  ta.style.height = "auto";
+  ta.style.height = Math.min(ta.scrollHeight,180)+"px";
+  sendBtn.classList.toggle("on", ta.value.trim().length>0);
+}
+ta.addEventListener("input", sync);
+ta.addEventListener("keydown", e=>{
+  if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); go(); }
+});
+sendBtn.onclick = go;
+function go(){ const q = ta.value.trim(); if(!q||busy) return; ta.value=""; sync(); ask(q); }
+function ask(q){ if(busy) return; show("search"); run(q); }
+
+/* ═══════════════════ the pipeline ═══════════════════ */
+let busy = false;
+const bottom = ()=>{ const s=$("#scroll"); s.scrollTop = s.scrollHeight; };
+
+async function run(query){
+  busy = true;
+  $("#hero").classList.add("hide");
+  const sc = pick(query);
+
+  /* question */
+  const turn = el("div","turn");
+  turn.appendChild(el("div","q",`<div class="txt">${esc(query)}</div>`));
+
+  const a = el("div","a", SPARK + `<div class="a-body"></div>`);
+  const body = a.querySelector(".a-body");
+  a.querySelector(".spark").classList.add("spin");
+  turn.appendChild(a);
+  $("#turns").appendChild(turn);
+  bottom();
+
+  /* process panel — opens itself so the two legs are visible while they run */
+  const proc = el("div","proc open");
+  proc.innerHTML =
+    `<button class="proc-head">
+       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg>
+       <span class="lbl">Running two searches in parallel…</span>
+       <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+     </button>
+     <div class="proc-body">
+       <div class="legs">
+         <div class="leg"><div class="leg-t"><span class="dot run" id="dA"></span>Leg A · web</div><div class="leg-out" id="oA"></div></div>
+         <div class="leg"><div class="leg-t"><span class="dot run" id="dB"></span>Leg B · your memory</div><div class="leg-out" id="oB"></div></div>
+       </div>
+       <div class="merge"><span class="bar"></span>merge<span class="bar"></span></div>
+       <div class="sandbox" id="sbx">sandbox — waiting for both legs</div>
+     </div>`;
+  proc.querySelector(".proc-head").onclick = ()=>proc.classList.toggle("open");
+  body.appendChild(proc);
+  bottom();
+
+  const dA=proc.querySelector("#dA"), dB=proc.querySelector("#dB"),
+        oA=proc.querySelector("#oA"), oB=proc.querySelector("#oB"),
+        sbx=proc.querySelector("#sbx"), lbl=proc.querySelector(".lbl");
+
+  /* both legs stream at once, at different speeds — that's the point */
+  const legA = (async()=>{ for(const l of sc.web){ await sleep(340+Math.random()*260); oA.appendChild(el("div",null,esc(l))); bottom(); } dA.className="dot done"; })();
+  const legB = (async()=>{ for(const l of sc.mem){ await sleep(240+Math.random()*220); oB.appendChild(el("div",null,esc(l))); bottom(); } dB.className = sc.mem.join().includes("skipped") ? "dot skip" : "dot done"; })();
+  await Promise.all([legA,legB]);
+
+  sbx.textContent = "sandbox — both legs in, synthesizing";
+  lbl.textContent = "Merged 2 sources of context";
+  await sleep(420);
+  proc.classList.remove("open");
+
+  /* synthesis streams token-ish by token */
+  const mdBox = el("div","md");
+  body.appendChild(mdBox);
+  const words = sc.answer.split(/(\s+)/);
+  let acc = "";
+  for(let i=0;i<words.length;i++){
+    acc += words[i];
+    if(i%2===0 || i===words.length-1){
+      mdBox.innerHTML = md(acc) + '<span class="caret-blink"></span>';
+      bottom();
+      await sleep(11);
+    }
+  }
+  mdBox.innerHTML = md(acc);
+  a.querySelector(".spark").classList.remove("spin");
+
+  /* sources */
+  if(sc.srcs?.length){
+    const s = el("div","srcs");
+    sc.srcs.forEach(([n,i,c],k)=>
+      s.appendChild(el("button","src",
+        `<span class="fav" style="background:${c}">${i}</span><span class="n">${esc(n)}</span><span style="color:var(--text-mute)">${k+1}</span>`)));
+    body.appendChild(s); bottom();
+  }
+
+  /* tool confirmation — the stream ends here and waits for a decision */
+  if(sc.tool){
+    await sleep(260);
+    const t = el("div","tool");
+    t.innerHTML =
+      `<div class="tool-h">
+         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="color:var(--warn);flex:0 0 17px"><path d="M12 2 1 21h22L12 2zm1 14h-2v2h2v-2zm0-7h-2v5h2V9z"/></svg>
+         Approval needed · <code style="font-family:var(--mono);font-size:12.5px">${esc(sc.tool.name)}</code>
+       </div>
+       <div class="tool-b">
+         <dl class="kv">${sc.tool.args.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+         <div class="tool-a">
+           <button class="btn p" data-ok="1">Approve &amp; run</button>
+           <button class="btn s" data-ok="0">Reject</button>
+         </div>
+       </div>`;
+    body.appendChild(t); bottom();
+
+    t.querySelectorAll("[data-ok]").forEach(b=>b.onclick = ()=>{
+      const ok = b.dataset.ok==="1";
+      t.querySelector(".tool-a").remove();
+      const v = el("div","verdict",
+        ok ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ok)"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg><span style="color:var(--ok)">${esc(sc.tool.okMsg)}</span>`
+           : `<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--text-mute)"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg><span style="color:var(--text-mute)">${esc(sc.tool.noMsg)}</span>`);
+      t.appendChild(v);
+      t.style.borderColor = ok ? "color-mix(in srgb,var(--ok) 45%,var(--border))" : "var(--border)";
+      t.style.background  = "transparent";
+      bottom();
+    });
+  }
+
+  /* memory write happens after the answer, never blocking it */
+  await sleep(520);
+  body.appendChild(el("div","mem-pill",
+    `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm10 1.5V10h4.5L14 5.5z"/></svg>
+     Memory updated · <code style="font-family:var(--mono);font-size:11.5px">${esc(sc.mem_upd)}</code>`));
+
+  /* action row */
+  const acts = el("div","acts");
+  [["M1 21h4V9H1v12zM23 10a2 2 0 0 0-2-2h-6.31l.95-4.57.03-.32a1.5 1.5 0 0 0-.44-1.06L14.17 1 7.59 7.59A2 2 0 0 0 7 9v10a2 2 0 0 0 2 2h9a2 2 0 0 0 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z","Good answer"],
+   ["M15 3H6a2 2 0 0 0-1.84 1.22L1.14 11.27c-.09.23-.14.47-.14.73v2a2 2 0 0 0 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59A2 2 0 0 0 17 15V5a2 2 0 0 0-2-2zm4 0v12h4V3h-4z","Bad answer"],
+   ["M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z","Copy"]
+  ].forEach(([d,t])=>{
+    const b = el("button","act",`<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="${d}"/></svg>`);
+    b.title = t;
+    b.onclick = ()=>b.classList.toggle("hit");
+    acts.appendChild(b);
+  });
+  body.appendChild(acts);
+  bottom();
+  busy = false;
+}
+
+sync();
+</script>
+</body>
+</html>
