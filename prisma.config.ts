@@ -17,6 +17,9 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: resolveDatabaseUrl(),
+    // Not required here: this file is loaded by every Prisma command, including the
+    // schema-only ones that never connect. Commands that do connect surface a clear
+    // failure against the placeholder host instead.
+    url: resolveDatabaseUrl(process.env, { required: false }),
   },
 });

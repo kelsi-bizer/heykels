@@ -11,7 +11,25 @@
  * Cloud SQL wins when CLOUD_SQL_CONNECTION_NAME is set, because on Cloud Run the
  * socket is the only reachable path to the database.
  */
-export function resolveDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+/**
+ * A syntactically valid URL that cannot resolve.
+ *
+ * Schema-only Prisma commands (`generate`, `validate`, `format`) never open a
+ * connection but still load the config, so demanding a real URL would break them
+ * anywhere the environment isn't populated — CI, a fresh clone, the Docker build.
+ * Anything that does try to connect fails against a self-describing host rather
+ * than a confusing default like localhost.
+ */
+export const UNCONFIGURED_DATABASE_URL =
+  "postgresql://unset:unset@database-not-configured.invalid:5432/unset?schema=public";
+
+/** Only a handful of keys are read, so the parameter is typed to that rather than the full ProcessEnv. */
+type EnvLike = Record<string, string | undefined>;
+
+export function resolveDatabaseUrl(
+  env: EnvLike = process.env,
+  { required = true }: { required?: boolean } = {},
+): string {
   const socket = env.CLOUD_SQL_CONNECTION_NAME;
 
   if (socket) {
@@ -32,6 +50,7 @@ export function resolveDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string
 
   const url = env.DATABASE_URL;
   if (!url) {
+    if (!required) return UNCONFIGURED_DATABASE_URL;
     throw new Error(
       "No database configured. Set DATABASE_URL, or CLOUD_SQL_CONNECTION_NAME + DB_USER for Cloud SQL.",
     );

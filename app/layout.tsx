@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "HeyKels",
   description:
     "An AI-native search engine that remembers context instead of search terms.",
+  icons: { icon: "/icon.svg" },
 };
 
 export const viewport: Viewport = {
