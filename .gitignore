@@ -17,3 +17,11 @@ npm-debug.log*
 coverage/
 prisma/*.db
 prisma/*.db-journal
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+
+# Prisma generated client
+/node_modules/.prisma/

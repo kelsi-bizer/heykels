@@ -1,0 +1,190 @@
+// HeyKels data model.
+//
+// Postgres, not SQLite: `String[]` scalar lists (MemoryDoc.tags, GoogleGrant.grantedScopes)
+// are a Postgres-only Prisma feature. In production this is Cloud SQL for PostgreSQL.
+
+// Prisma 7: connection URLs live in prisma.config.ts (for migrate) and are supplied
+// to PrismaClient through a driver adapter at runtime — see lib/db.ts.
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── Auth.js ─────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  accounts Account[]
+  sessions Session[]
+
+  grant    GoogleGrant?
+  searches Search[]
+  memory   MemoryDoc[]
+
+  createdAt DateTime @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  sessionToken String   @id
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ───────────────────────── Workspace grant ─────────────────────────
+
+// Deliberately separate from `Account`. The login identity and the Workspace
+// authorization have different lifecycles: sign-in asks for openid/email/profile
+// only, and the Workspace scopes are granted later (or revoked, or expired after
+// 7 days while the OAuth app is unverified) without affecting the ability to log in.
+model GoogleGrant {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  encryptedRefreshToken String   @db.Text
+  accessToken           String?  @db.Text
+  expiresAt             DateTime?
+  grantedScopes         String[]
+
+  // Drive folder holding the user's memory markdown, created at connect time.
+  memoryFolderId      String?
+  // Cursor for Drive changes.list, so cache sync is incremental.
+  driveStartPageToken String?
+
+  connectedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────── Searches ─────────────────────────
+
+model Search {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turns Turn[]
+
+  @@index([userId, updatedAt])
+}
+
+model Turn {
+  id       String @id @default(cuid())
+  searchId String
+
+  query  String @db.Text
+  answer String @db.Text @default("")
+
+  // Citations surfaced to the UI, from url_citation annotations.
+  sources Json?
+  // Both leg results. Also the replay fallback when a stored interaction 404s.
+  sandboxJson Json?
+  // Gemini interaction id, for previous_interaction_id continuation.
+  interactionId String?
+
+  status    String   @default("streaming") // streaming | awaiting_approval | complete | error
+  createdAt DateTime @default(now())
+
+  search  Search            @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  pending PendingToolCall[]
+
+  @@index([searchId, createdAt])
+}
+
+// ───────────────────────── Memory (Drive read cache) ─────────────────────────
+
+// Drive is the source of truth; this table exists so the search read path never
+// waits on a Drive round trip. Sync is incremental via changes.list.
+model MemoryDoc {
+  id     String @id @default(cuid())
+  userId String
+
+  path  String // e.g. "interests/ai-search.md"
+  title String
+  tags  String[]
+  body  String @db.Text
+
+  driveFileId     String
+  driveVersion    String?
+  driveModifiedAt DateTime?
+  syncedAt        DateTime  @default(now())
+  // Users edit and delete these files by hand in Drive; tombstone rather than
+  // hard-delete so a sync can't silently resurrect a removed doc.
+  deletedAt       DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, path])
+  @@index([userId, deletedAt])
+}
+
+// ───────────────────────── Tool approval ─────────────────────────
+
+// Survives the approval round trip. An HTTP response cannot block waiting for
+// the user to click Approve, so the stream ends, this row persists, and the
+// resume request opens a new stream continuing from interactionId.
+model PendingToolCall {
+  id     String @id @default(cuid())
+  turnId String
+
+  callId   String
+  toolName String
+  args     Json
+
+  interactionId    String
+  // Gemini requires thought signatures to be replayed with function results.
+  thoughtSignature String? @db.Text
+
+  status String  @default("pending") // pending | approved | rejected | executed | failed
+  result Json?
+
+  createdAt DateTime @default(now())
+
+  turn Turn @relation(fields: [turnId], references: [id], onDelete: Cascade)
+
+  @@unique([turnId, callId])
+  @@index([turnId, status])
+}
