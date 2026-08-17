@@ -54,12 +54,16 @@ To click around without Google credentials, `node scripts/seed-dev.mjs` creates 
 
 ## Deploying to Cloud Run
 
+None of this is needed to run the app — it is only for putting HeyKels on the internet.
+
 ```bash
-gcloud sql instances create heykels-db --database-version=POSTGRES_16 --tier=db-f1-micro --region=us-central1
-gcloud sql databases create heykels --instance=heykels-db
-# store AUTH_SECRET, APP_ENCRYPTION_KEY, the OAuth client and the Gemini key in Secret Manager, then:
+./scripts/setup-gcloud.sh YOUR_PROJECT_ID     # one time; safe to re-run
 gcloud builds submit --config cloudbuild.yaml --substitutions _REGION=us-central1,_INSTANCE=heykels-db
 ```
+
+The setup script enables the APIs, creates the Cloud SQL instance and the Artifact Registry repo, generates and stores the secrets, and — the step most guides omit — grants the Cloud Run and Cloud Build service accounts the IAM roles they need. Without those grants the deploy succeeds and the app then fails at runtime, unable to read its own secrets or reach the database.
+
+**Deployments use Vertex AI, not an API key.** The service account already authenticates, so there is no Gemini credential to mint, rotate, or leak, and model usage stays inside the project's billing and audit trail. Set `GEMINI_API_KEY` only if you prefer the Gemini API locally.
 
 Migrations run as their own Cloud Build step *before* traffic shifts — running them from the app on boot would race across concurrently starting instances. The service is deployed with `--no-cpu-throttling` and a 300s timeout because throttled CPU stalls a streaming response between tokens.
 

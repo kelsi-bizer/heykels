@@ -12,6 +12,7 @@ substitutions:
   _INSTANCE: heykels-db
   _DB_NAME: heykels
   _DB_USER: heykels
+  _LOCATION: global
 
 images:
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/heykels/${_SERVICE}:${SHORT_SHA}"
@@ -63,8 +64,11 @@ steps:
       - "--allow-unauthenticated"
       # Mounts the Cloud SQL socket at /cloudsql/<connection name>.
       - "--add-cloudsql-instances=${PROJECT_ID}:${_REGION}:${_INSTANCE}"
-      - "--set-env-vars=CLOUD_SQL_CONNECTION_NAME=${PROJECT_ID}:${_REGION}:${_INSTANCE},DB_USER=${_DB_USER},DB_NAME=${_DB_NAME},GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=global"
-      - "--set-secrets=DB_PASSWORD=heykels-db-password:latest,AUTH_SECRET=heykels-auth-secret:latest,AUTH_GOOGLE_ID=heykels-google-id:latest,AUTH_GOOGLE_SECRET=heykels-google-secret:latest,GEMINI_API_KEY=heykels-gemini-key:latest,APP_ENCRYPTION_KEY=heykels-encryption-key:latest"
+      # Vertex AI rather than an API key: the service account already authenticates,
+      # so there is no Gemini credential to mint, rotate, or leak. It also keeps model
+      # usage inside the project's own billing and audit trail.
+      - "--set-env-vars=CLOUD_SQL_CONNECTION_NAME=${PROJECT_ID}:${_REGION}:${_INSTANCE},DB_USER=${_DB_USER},DB_NAME=${_DB_NAME},GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_LOCATION}"
+      - "--set-secrets=DB_PASSWORD=heykels-db-password:latest,AUTH_SECRET=heykels-auth-secret:latest,AUTH_GOOGLE_ID=heykels-google-id:latest,AUTH_GOOGLE_SECRET=heykels-google-secret:latest,APP_ENCRYPTION_KEY=heykels-encryption-key:latest"
       # Streaming responses need a long request timeout and CPU that stays awake
       # between tokens; the default throttle would stall the stream mid-answer.
       - "--timeout=300"
