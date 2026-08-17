@@ -232,6 +232,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .hide{display:none!important}
 
 /* ── additions for the real app (no equivalent in the static prototype) ── */
+/* Next's <Link> renders an anchor, which the prototype's <button> markup never had. */
+a{color:inherit}
+.sb-item,.new-btn,.src,.doc-h,.chip{text-decoration:none}
+.sb-item:hover,.new-btn:hover{text-decoration:none}
+
 .center-page{display:grid;place-items:center;min-height:100vh;padding:24px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:32px;max-width:420px;width:100%}
 .card h1{font-size:26px;font-weight:500;margin:0 0 6px}

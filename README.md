@@ -2,18 +2,18 @@
 
 An AI-native search engine where the search box is an agent.
 
-Instead of retaining search terms and cookies, HeyKels retains **context** — durable, human-readable markdown memory documents stored in *your own Google Drive*, consulted and updated on every search.
+Instead of retaining search terms and cookies, HeyKels retains **context** — durable markdown documents stored in *your own Google Drive*, consulted and updated on every search. You can open, edit, or delete any of them in Drive without the app in the loop. That is the point: the personalization is legible and yours, not an opaque profile inferred from click history.
 
 ## How a search works
 
-Every query fans out to two model calls **in parallel**:
+Every query fans out to two model calls **at the same time**:
 
-| | |
+| Leg | What it does |
 |---|---|
-| **Leg A — web** | `gemini-3.5-flash` grounded in Google Search + URL context |
-| **Leg B — memory** | `gemini-3.5-flash` over your markdown memory documents |
+| **A — web** | `gemini-3.5-flash` grounded in Google Search + URL context |
+| **B — memory** | `gemini-3.5-flash` over your own markdown memory documents |
 
-Both results land in a **sandbox**, and a third `gemini-3.5-flash` call merges them into one cohesive answer. From there the agent can act in your Google Workspace — Gmail, Calendar, Drive, Docs, Sheets — with **every write action gated behind explicit confirmation**.
+Both land in a **sandbox**, and a third call merges them into one answer. From there the agent can act in Google Workspace — but **every action that changes something is confirmed by you first**.
 
 ```
 query ─┬─► leg A: web-grounded    ─┐
@@ -22,35 +22,82 @@ query ─┬─► leg A: web-grounded    ─┐
                                                       └─► memory writer ─► .md in Drive
 ```
 
-## Prototype
+## Requirements compliance
 
-`prototype/index.html` is a self-contained, no-build clickable prototype of the full UI. Open it directly in a browser:
+| # | Requirement | Where it lives |
+|---|---|---|
+| 1 | **Gemini 3.5 or newer**, via Gemini API **or** Vertex AI | `lib/pipeline/client.ts` — `gemini-3.5-flash` for all four roles. `GOOGLE_GENAI_USE_VERTEXAI=true` routes the same calls through Vertex AI using Application Default Credentials; unset it to use an API key. |
+| 2 | **A Google agent framework** | The **Google GenAI SDK** (`@google/genai`) is what the whole pipeline is built on — the Interactions API, streaming, function calling, and the multi-turn tool loop. See `lib/pipeline/synthesis.ts`. |
+| 3 | **Google Cloud infrastructure** | **Cloud Run** (`Dockerfile`, `cloudbuild.yaml`) and **Cloud SQL for PostgreSQL** (`lib/db-url.ts` resolves the mounted socket). |
+
+## Running it locally
 
 ```bash
-open prototype/index.html      # macOS
-xdg-open prototype/index.html  # Linux
+npm install
+cp .env.example .env          # then fill in the values below
+./scripts/dev-db.sh           # local Postgres (or point DATABASE_URL anywhere)
+npx prisma migrate dev
+npm run dev
 ```
 
-It runs on canned data — no API key, no backend, no network. What it demonstrates:
+You need, at minimum:
 
-- The Gemini-style shell: collapsible sidebar, **New Search**, Recent list, light/dark themes
-- A live **process panel** showing both legs streaming at once, then merging in the sandbox
-- A streamed answer with inline citations and source chips
-- A **tool confirmation card** with working Approve / Reject, including the rejection path
-- The **Memory** browser — the actual markdown documents, frontmatter and all
-- The **Connections** page, granted scopes, and the 7-day token expiry warning
+- `AUTH_SECRET` and `APP_ENCRYPTION_KEY` — both `openssl rand -base64 32`
+- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` — a Google OAuth client with **two** redirect URIs registered:
+  `http://localhost:3000/api/auth/callback/google` (sign-in) and
+  `http://localhost:3000/api/google/callback` (the Workspace grant)
+- `GEMINI_API_KEY`, or `GOOGLE_GENAI_USE_VERTEXAI=true` plus `GOOGLE_CLOUD_PROJECT`
 
-Try the four suggestion chips — each routes to a different scenario (web-heavy, memory-heavy, Gmail draft, Calendar event).
+`npm test` and `npm run build` need neither a database nor an API key.
 
-## Status
+To click around without Google credentials, `node scripts/seed-dev.mjs` creates a user, a session token, and sample data; set the cookie `authjs.session-token=dev-session-token-abc123`.
 
-The prototype is milestone **M0**. The application itself is not built yet — see the implementation plan for the remaining milestones (M1–M8: scaffold, auth, pipeline, Drive memory, Workspace tools, tests).
+## Deploying to Cloud Run
 
-## Notes on Google verification
+```bash
+gcloud sql instances create heykels-db --database-version=POSTGRES_16 --tier=db-f1-micro --region=us-central1
+gcloud sql databases create heykels --instance=heykels-db
+# store AUTH_SECRET, APP_ENCRYPTION_KEY, the OAuth client and the Gemini key in Secret Manager, then:
+gcloud builds submit --config cloudbuild.yaml --substitutions _REGION=us-central1,_INSTANCE=heykels-db
+```
 
-Two of the scopes this product needs are **restricted** and require Google app verification plus a paid annual CASA security assessment before non-test users can grant them:
+Migrations run as their own Cloud Build step *before* traffic shifts — running them from the app on boot would race across concurrently starting instances. The service is deployed with `--no-cpu-throttling` and a 300s timeout because throttled CPU stalls a streaming response between tokens.
+
+## A few decisions worth knowing
+
+**The web leg returns plain text, not JSON.** Gemini's `url_citation` annotations carry character offsets into the model's text output. Forcing JSON makes those offsets index into a serialized string, so every citation silently points at the wrong span. Sources come from the annotations, never from anything the model writes about its own sources.
+
+**Approval is a stream handoff, not a pause.** An HTTP response cannot block waiting for you to click Approve. So the stream ends on a `tool_proposed` event, the pending call is persisted, and your decision opens a *new* stream that continues the same Gemini interaction. It survives a page refresh, and it works on serverless. A rejection still sends a function result — omitting one leaves the interaction parked forever and poisons every later turn in the thread.
+
+**Legs settle independently.** `Promise.allSettled`, never `Promise.all`: a rate limit on one leg must not discard the other's work. A failed leg degrades the answer and says so rather than failing the search.
+
+**Memory reads never touch Drive.** Drive is the source of truth, but the search path reads a Postgres mirror; Drive syncs incrementally via `changes.list`. Writes merge by union of facts rather than overwriting, because two searches finishing close together would otherwise silently discard each other's learning.
+
+**Memory documents are hidden from Drive search.** `drive_search_files` filters them out — they already reach the model through leg B, and surfacing them twice would invite the agent to rewrite memory outside the writer path.
+
+## Google verification
+
+Two scopes are **restricted** and need Google app verification plus a paid annual CASA security assessment before anyone outside your OAuth test-user list can grant them:
 
 - `gmail.modify` — read, draft, and send mail
 - `drive.readonly` — search and read your Drive
 
-Until verification completes, the OAuth app stays in Testing mode, where **Google expires refresh tokens every 7 days**. Expect to reconnect roughly weekly during development. This is Google policy and cannot be worked around in code.
+`drive.file` is requested alongside `drive.readonly` and is not redundant: read-only Drive cannot create the memory documents.
+
+Until verification completes the app stays in Testing mode, where **Google expires refresh tokens every 7 days**. Expect to reconnect roughly weekly. That is Google policy and cannot be worked around in code — the app surfaces a Reconnect banner rather than failing quietly.
+
+## Prototype
+
+`prototype/index.html` is the original self-contained design prototype, kept because it still runs in any browser with no build step and no backend. The application's stylesheet is generated from it, so the two stay visually identical.
+
+## Layout
+
+```
+app/                      routes: /login, /search, /search/[id], /memory, /settings/connections
+  api/search/[id]/turn    NDJSON stream — runs the pipeline
+  api/search/[id]/resume  second half of the approval handoff
+  api/google/connect      Workspace consent (hand-rolled; Auth.js cannot widen scopes reliably)
+lib/pipeline/             client, web leg, memory leg, sandbox, synthesis, orchestrator
+lib/memory/               markdown docs, Drive store, cache sync, retrieval, writer
+lib/workspace/tools/      Gmail, Calendar, Drive, Docs, Sheets
+```

@@ -25,3 +25,9 @@ next-env.d.ts
 
 # Prisma generated client
 /node_modules/.prisma/
+
+# Local dev database cluster
+/tmp-pgdata/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

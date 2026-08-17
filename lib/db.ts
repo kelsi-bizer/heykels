@@ -21,6 +21,22 @@ function createClient() {
 // new pool and leak connections until Postgres refuses them.
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma = globalForPrisma.prisma ?? createClient();
+function client(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createClient();
+  }
+  return globalForPrisma.prisma;
+}
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+/**
+ * Constructed on first property access rather than at import.
+ *
+ * Importing a module that happens to sit beside a query — a pure ranking function,
+ * a type — should not open a connection pool or demand DATABASE_URL. Eager
+ * instantiation also makes every Cloud Run cold start pay for a pool the request
+ * may never touch.
+ */
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get: (_t, prop) => Reflect.get(client(), prop),
+  has: (_t, prop) => Reflect.has(client(), prop),
+});

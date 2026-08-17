@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The client must exist before tsc, since types are generated.
+      - run: npx prisma generate
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # A syntactically valid placeholder: the build generates the client and
+      # compiles pages, but never opens a connection.
+      - run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+          AUTH_SECRET: ci-placeholder-secret-value-for-build-only
+          APP_ENCRYPTION_KEY: Y2ktb25seS0zMi1ieXRlLWtleS1mb3ItYnVpbGQhIQ==
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Proves the Cloud Run image still builds; no push, no credentials needed.
+      - run: docker build -t heykels:ci .
