@@ -35,11 +35,8 @@ If something goes wrong, skip to [When something breaks](#when-something-breaks)
 ```bash
 cd ~ && rm -rf heykels && \
 git clone https://github.com/kelsi-bizer/heykels.git && \
-cd heykels && \
-git checkout claude/heykels-ai-search-engine-rozsz3
+cd heykels
 ```
-
-You should see `Switched to branch 'claude/heykels-ai-search-engine-rozsz3'`.
 
 > Cloud Shell may ask you to authorize Git access to GitHub. Say yes.
 
@@ -170,6 +167,9 @@ Run `./scripts/migrate-cloud.sh` as well, but only if the database schema change
 |---|---|
 | `billing account ... not found` in Step 3 | Billing isn't enabled. See *Before you start*. |
 | Step 3 seems frozen | Normal. Creating the database really does take ~8 minutes with no output. |
+| `Invalid Tier (db-f1-micro) for (ENTERPRISE_PLUS) Edition` | You're on an old copy of the setup script. Run `cd ~/heykels && git pull`, then re-run Step 3. |
+| `ENOSPC: no space left on device` | Cloud Shell's 5GB disk is full. Free space with `npm cache clean --force; rm -rf ~/heykels/node_modules`, then re-run the failed step. |
+| A later command complains about a missing project | Cloud Shell restarted (it does after ~20 min idle) and forgot the project. Run `cd ~/heykels && gcloud config set project heykels` and carry on. Your files survive restarts; the setting doesn't. |
 | `PERMISSION_DENIED` in Step 6 | The permission grants in Step 3 didn't finish. Re-run `./scripts/setup-gcloud.sh heykels`. |
 | `Error 400: redirect_uri_mismatch` at sign-in | Step 7 is missing, has a typo, or hasn't propagated. Check both URIs, and that there's no trailing slash. |
 | Signed in, but bounced back to the login page | Usually the cookie. Try an incognito window. |

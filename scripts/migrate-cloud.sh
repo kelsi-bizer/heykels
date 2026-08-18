@@ -22,6 +22,18 @@ say() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 
 CONNECTION="${PROJECT}:${REGION}:${INSTANCE}"
 
+# Preflight: the proxy starts happily even when the instance doesn't exist, and the
+# failure then surfaces later, tangled up in npm output. Better to stop now with a
+# message that names the actual problem.
+say "Checking the Cloud SQL instance exists"
+STATE="$(gcloud sql instances describe "$INSTANCE" --project="$PROJECT" --format='value(state)' 2>/dev/null || true)"
+if [ -z "$STATE" ]; then
+  echo "Cloud SQL instance '$INSTANCE' does not exist in project '$PROJECT'." >&2
+  echo "Run ./scripts/setup-gcloud.sh $PROJECT first." >&2
+  exit 1
+fi
+echo "    $INSTANCE is $STATE"
+
 say "Fetching the database password from Secret Manager"
 DB_PASSWORD="$(gcloud secrets versions access latest \
   --secret=heykels-db-password --project="$PROJECT")"

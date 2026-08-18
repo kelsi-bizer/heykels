@@ -53,22 +53,41 @@ ok gcloud artifacts repositories create heykels \
   --description="HeyKels container images"
 
 # ── 3. Cloud SQL ──────────────────────────────────────────────────────────────
-# db-f1-micro is the cheapest tier. Creation genuinely takes several minutes.
+# This section fails LOUDLY, unlike the idempotent steps above. The `ok` helper
+# tolerates already-exists errors, but on a first run it once swallowed a real
+# creation failure and the script still printed "Setup complete" — every later
+# step then failed against a database that was never there. Existence is checked
+# explicitly, and a genuine failure stops the script.
 say "Cloud SQL instance (slow — several minutes on first run)"
-ok gcloud sql instances create "$INSTANCE" \
-  --database-version=POSTGRES_16 \
-  --tier=db-f1-micro \
-  --region="$REGION" \
-  --storage-auto-increase
+if gcloud sql instances describe "$INSTANCE" >/dev/null 2>&1; then
+  echo "    instance already exists"
+else
+  # --edition=enterprise is required: the API otherwise defaults new instances to
+  # Enterprise Plus, where the cheap shared-core tiers like db-f1-micro are
+  # invalid and creation is rejected with "Invalid Tier".
+  gcloud sql instances create "$INSTANCE" \
+    --database-version=POSTGRES_16 \
+    --edition=enterprise \
+    --tier=db-f1-micro \
+    --region="$REGION" \
+    --storage-auto-increase || {
+      echo "" >&2
+      echo "Cloud SQL instance creation FAILED — stopping here." >&2
+      echo "Nothing after this point can work without the database." >&2
+      exit 1
+    }
+fi
 
 say "Database and user"
-ok gcloud sql databases create "$DB_NAME" --instance="$INSTANCE"
+if ! gcloud sql databases describe "$DB_NAME" --instance="$INSTANCE" >/dev/null 2>&1; then
+  gcloud sql databases create "$DB_NAME" --instance="$INSTANCE" || exit 1
+fi
 
 DB_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)"
 ok gcloud sql users create "$DB_USER" --instance="$INSTANCE" --password="$DB_PASSWORD"
 # If the user already existed the create failed and the generated password is not
 # in effect, so set it explicitly to keep the secret below truthful.
-ok gcloud sql users set-password "$DB_USER" --instance="$INSTANCE" --password="$DB_PASSWORD"
+gcloud sql users set-password "$DB_USER" --instance="$INSTANCE" --password="$DB_PASSWORD" || exit 1
 
 # ── 4. Secrets ────────────────────────────────────────────────────────────────
 # Note there is no Gemini key here: the deploy uses Vertex AI, authenticating as
