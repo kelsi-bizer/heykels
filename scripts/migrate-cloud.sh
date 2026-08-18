@@ -62,6 +62,10 @@ for _ in $(seq 1 30); do
 done
 
 say "Installing dependencies (first run only, ~1 minute)"
+# npm writes every package twice: once to its cache, once to node_modules. Cloud
+# Shell's home directory is capped at 5GB and fills fast, so the cache goes to
+# /tmp, which doesn't count against that quota.
+export npm_config_cache="${npm_config_cache:-/tmp/.npm-heykels}"
 [ -d node_modules ] || npm ci --no-audit --no-fund
 
 say "Applying migrations"
