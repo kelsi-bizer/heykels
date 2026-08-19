@@ -23,8 +23,34 @@ function hasSessionCookie(req: NextRequest): boolean {
   return SESSION_COOKIES.some((name) => Boolean(req.cookies.get(name)?.value));
 }
 
+/**
+ * Cloud Run answers on two URLs (a hashed one and a project-number one). OAuth
+ * cannot span them: the PKCE cookie is set on whichever host served /login, but
+ * Google always redirects back to the AUTH_URL host, and the cookie isn't there —
+ * sign-in dies with InvalidCheck. Everyone gets bounced to the canonical host
+ * before any cookie is involved.
+ */
+function canonicalHost(): string | null {
+  const url = process.env.AUTH_URL;
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
 export default function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const canonical = canonicalHost();
+  if (canonical && req.nextUrl.host !== canonical) {
+    const url = req.nextUrl.clone();
+    url.host = canonical;
+    url.protocol = "https";
+    url.port = "";
+    return NextResponse.redirect(url, 308);
+  }
   const isPublic = pathname === "/login" || pathname.startsWith("/api/auth");
   const signedIn = hasSessionCookie(req);
 
