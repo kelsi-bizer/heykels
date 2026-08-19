@@ -85,12 +85,10 @@ export async function runMemoryLeg(
     return { ok: true, ...parsed };
   } catch (err) {
     if ((err as Error)?.name === "AbortError") throw err;
+    const reason = (err as Error)?.message ?? "memory search failed";
+    console.error("[heykels] memory leg failed:", reason);
     onLine?.("✗ failed");
-    return {
-      ok: false,
-      reason: (err as Error)?.message ?? "memory search failed",
-      kind: "degraded",
-    };
+    return { ok: false, reason, kind: "degraded" };
   }
 }
 

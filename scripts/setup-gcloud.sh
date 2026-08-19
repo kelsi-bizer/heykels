@@ -39,7 +39,7 @@ ok gcloud services enable \
   cloudbuild.googleapis.com \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com \
-  aiplatform.googleapis.com \
+  generativelanguage.googleapis.com \
   gmail.googleapis.com \
   calendar-json.googleapis.com \
   drive.googleapis.com \

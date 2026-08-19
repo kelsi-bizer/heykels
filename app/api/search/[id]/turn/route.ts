@@ -139,10 +139,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         emit({ type: "done", turnId: turn.id });
       } catch (err) {
-        const message =
-          (err as Error)?.name === "AbortError"
-            ? "Search cancelled."
-            : ((err as Error)?.message ?? "Something went wrong.");
+        const aborted = (err as Error)?.name === "AbortError";
+        if (!aborted) console.error("[heykels] turn failed:", err);
+        const message = aborted
+          ? "Search cancelled."
+          : ((err as Error)?.message ?? "Something went wrong.");
         emit({ type: "error", message });
         await prisma.turn
           .update({ where: { id: turn.id }, data: { status: "error" } })

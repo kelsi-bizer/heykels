@@ -147,6 +147,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         emit({ type: "done", turnId: turn.id });
       } catch (err) {
+        console.error("[heykels] resume failed:", err);
         emit({
           type: "error",
           message: (err as Error)?.message ?? "Could not complete the action.",

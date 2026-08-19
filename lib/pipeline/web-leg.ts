@@ -46,6 +46,9 @@ export async function runWebLeg(
   } catch (err) {
     if ((err as Error)?.name === "AbortError") throw err;
     const reason = (err as Error)?.message ?? "web search failed";
+    // Server-side too: the degraded-leg UI flashes past, but `gcloud run services
+    // logs read` keeps this — the difference between a diagnosis and a database dig.
+    console.error("[heykels] web leg failed:", reason);
     onLine?.("✗ failed");
     return { ok: false, reason, kind: "degraded" };
   }
