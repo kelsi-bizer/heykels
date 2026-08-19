@@ -175,6 +175,7 @@ Run `./scripts/migrate-cloud.sh` as well, but only if the database schema change
 | Signed in, but bounced back to the login page | Usually the cookie. Try an incognito window. |
 | "Access blocked: app not verified" | Expected. Your Google account must be on the **Test users** list under *Google Auth Platform → Audience*. |
 | Search spins, then errors | The Gemini call failed. Check the logs, below. |
+| Search starts but the legs never print anything | The service is pointed at Vertex AI, which doesn't serve the Interactions API. Set `GOOGLE_GENAI_USE_VERTEXAI=false` and attach the `heykels-gemini-key` secret as `GEMINI_API_KEY`. |
 | Workspace disconnects after about a week | Expected, and not a bug — Google expires tokens every 7 days for unverified apps. Click **Reconnect**. |
 
 **To read the application logs:**
@@ -198,6 +199,6 @@ gcloud run services describe heykels --region us-central1 \
 |---|---|
 | **Cloud Run** | Runs the app. Scales to zero when nobody's using it, so idle costs nothing. |
 | **Cloud SQL** | PostgreSQL. Holds your searches, and a fast local copy of your memory files. |
-| **Vertex AI** | Serves `gemini-3.5-flash`. Authenticates as the service account — no API key anywhere. |
+| **Gemini API** | Serves `gemini-3.5-flash`, via the key in Secret Manager. (Vertex AI can't serve this app: it doesn't host the Interactions API the pipeline uses.) |
 | **Secret Manager** | Holds the five secrets. Never in the container image, never in build logs. |
 | **Your Google Drive** | The real home of your memory. Markdown files you can read, edit or delete yourself. |

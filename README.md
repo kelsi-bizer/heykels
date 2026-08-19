@@ -26,7 +26,7 @@ query ─┬─► leg A: web-grounded    ─┐
 
 | # | Requirement | Where it lives |
 |---|---|---|
-| 1 | **Gemini 3.5 or newer**, via Gemini API **or** Vertex AI | `lib/pipeline/client.ts` — `gemini-3.5-flash` for all four roles. `GOOGLE_GENAI_USE_VERTEXAI=true` routes the same calls through Vertex AI using Application Default Credentials; unset it to use an API key. |
+| 1 | **Gemini 3.5 or newer**, via Gemini API **or** Vertex AI | `lib/pipeline/client.ts` — `gemini-3.5-flash` for all four roles, via the **Gemini API**. A Vertex switch exists, but the Interactions API this pipeline uses is served only by `generativelanguage.googleapis.com` — on Vertex the `/interactions` path 404s (verified in production) — so the switch warns loudly and deployments use an API key. |
 | 2 | **A Google agent framework** | The **Google GenAI SDK** (`@google/genai`) is what the whole pipeline is built on — the Interactions API, streaming, function calling, and the multi-turn tool loop. See `lib/pipeline/synthesis.ts`. |
 | 3 | **Google Cloud infrastructure** | **Cloud Run** (`Dockerfile`, `cloudbuild.yaml`) and **Cloud SQL for PostgreSQL** (`lib/db-url.ts` resolves the mounted socket). |
 
@@ -63,7 +63,7 @@ gcloud builds submit --config cloudbuild.yaml --substitutions _REGION=us-central
 
 The setup script enables the APIs, creates the Cloud SQL instance and the Artifact Registry repo, generates and stores the secrets, and — the step most guides omit — grants the Cloud Run and Cloud Build service accounts the IAM roles they need. Without those grants the deploy succeeds and the app then fails at runtime, unable to read its own secrets or reach the database.
 
-**Deployments use Vertex AI, not an API key.** The service account already authenticates, so there is no Gemini credential to mint, rotate, or leak, and model usage stays inside the project's billing and audit trail. Set `GEMINI_API_KEY` only if you prefer the Gemini API locally.
+**Deployments use a Gemini API key** (stored in Secret Manager as `heykels-gemini-key`). Vertex AI would be preferable — no key to rotate — but the Interactions API is not served on Vertex; the `/interactions` path 404s there, which surfaced in production as every search hanging. The `GOOGLE_GENAI_USE_VERTEXAI` switch remains for when Google ships it, and warns loudly if enabled.
 
 Migrations run as their own Cloud Build step *before* traffic shifts — running them from the app on boot would race across concurrently starting instances. The service is deployed with `--no-cpu-throttling` and a 300s timeout because throttled CPU stalls a streaming response between tokens.
 

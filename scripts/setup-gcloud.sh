@@ -90,8 +90,6 @@ ok gcloud sql users create "$DB_USER" --instance="$INSTANCE" --password="$DB_PAS
 gcloud sql users set-password "$DB_USER" --instance="$INSTANCE" --password="$DB_PASSWORD" || exit 1
 
 # ── 4. Secrets ────────────────────────────────────────────────────────────────
-# Note there is no Gemini key here: the deploy uses Vertex AI, authenticating as
-# the service account, so there is no model credential to store at all.
 say "Secrets"
 put_secret() {
   local name="$1" value="$2"
@@ -114,6 +112,13 @@ if ! gcloud secrets describe heykels-google-id >/dev/null 2>&1; then
   put_secret heykels-google-id     "REPLACE_WITH_OAUTH_CLIENT_ID"
   put_secret heykels-google-secret "REPLACE_WITH_OAUTH_CLIENT_SECRET"
   NEED_OAUTH=1
+fi
+
+# The Gemini API key. The Interactions API exists only on the Gemini API
+# endpoint — Vertex AI 404s on /interactions — so a key is required.
+if ! gcloud secrets describe heykels-gemini-key >/dev/null 2>&1; then
+  put_secret heykels-gemini-key "REPLACE_WITH_GEMINI_API_KEY"
+  NEED_GEMINI=1
 fi
 
 # ── 5. IAM ────────────────────────────────────────────────────────────────────
@@ -143,9 +148,20 @@ cat <<EOF
 
     Cloud SQL connection name:  ${PROJECT}:${REGION}:${INSTANCE}
     Database / user:            ${DB_NAME} / ${DB_USER}
-    Model access:               Vertex AI (no API key needed)
+    Model access:               Gemini API (key stored in Secret Manager)
 
 EOF
+
+if [ "${NEED_GEMINI:-0}" = "1" ]; then
+  cat <<EOF2
+    ⚠ The Gemini key secret holds a placeholder. Create a key (Cloud Console →
+      APIs & Services → Credentials → Create credentials → API key, with the
+      Gemini API enabled), then:
+
+        printf '%s' YOUR_GEMINI_KEY | gcloud secrets versions add heykels-gemini-key --data-file=-
+
+EOF2
+fi
 
 if [ "${NEED_OAUTH:-0}" = "1" ]; then
   cat <<EOF
