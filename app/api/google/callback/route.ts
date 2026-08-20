@@ -9,15 +9,25 @@ import { STATE_COOKIE, verifyState } from "../connect/route";
 
 export const runtime = "nodejs";
 
+/**
+ * Redirects must be built on AUTH_URL, never on the request's own origin: on
+ * Cloud Run the request URL the handler sees is the container-internal
+ * http://0.0.0.0:8080, and a redirect built from it strands the browser on an
+ * unreachable address the moment the OAuth round trip completes (hit live).
+ */
+function appUrl(path: string, req: Request): URL {
+  return new URL(path, process.env.AUTH_URL || new URL(req.url).origin);
+}
+
 export async function GET(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) return Response.redirect(new URL("/login", req.url));
+  if (!session?.user?.id) return Response.redirect(appUrl("/login", req));
 
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
-  const settings = new URL("/settings/connections", url.origin);
+  const settings = appUrl("/settings/connections", req);
 
   if (error) {
     settings.searchParams.set("error", error);
