@@ -2,7 +2,7 @@
 
 An AI-native search engine where the search box is an agent.
 
-Instead of retaining search terms and cookies, HeyKels retains **context** — durable markdown documents stored in *your own Google Drive*, consulted and updated on every search. You can open, edit, or delete any of them in Drive without the app in the loop. That is the point: the personalization is legible and yours, not an opaque profile inferred from click history.
+Instead of retaining search terms and cookies, HeyKels retains **context** — durable markdown documents stored in *your own Google Drive*, consulted and updated on every search. You can read or delete any of them in Drive without the app in the loop, and edit them on the app's Memory page, which writes straight back to the same Drive files. (Editing lives in the app because Drive's own UI can only preview `.md` files — and "Open with Google Docs" edits a converted copy the agent never reads.) That is the point: the personalization is legible and yours, not an opaque profile inferred from click history.
 
 ## How a search works
 

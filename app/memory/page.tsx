@@ -46,8 +46,9 @@ export default async function MemoryPage() {
                 >
                   Drive › HeyKels Memory
                 </a>
-                . You own them — edit or delete any file directly in Drive and the next
-                search reflects it.
+                . You own them — edit any file right here with the pencil, or delete it
+                here or in Drive, and the next search reflects it. (Drive itself can
+                only preview .md files, not edit them.)
               </>
             ) : (
               <>
