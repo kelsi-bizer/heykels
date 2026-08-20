@@ -39,7 +39,7 @@ ok gcloud services enable \
   cloudbuild.googleapis.com \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com \
-  aiplatform.googleapis.com \
+  generativelanguage.googleapis.com \
   gmail.googleapis.com \
   calendar-json.googleapis.com \
   drive.googleapis.com \
@@ -53,26 +53,43 @@ ok gcloud artifacts repositories create heykels \
   --description="HeyKels container images"
 
 # ── 3. Cloud SQL ──────────────────────────────────────────────────────────────
-# db-f1-micro is the cheapest tier. Creation genuinely takes several minutes.
+# This section fails LOUDLY, unlike the idempotent steps above. The `ok` helper
+# tolerates already-exists errors, but on a first run it once swallowed a real
+# creation failure and the script still printed "Setup complete" — every later
+# step then failed against a database that was never there. Existence is checked
+# explicitly, and a genuine failure stops the script.
 say "Cloud SQL instance (slow — several minutes on first run)"
-ok gcloud sql instances create "$INSTANCE" \
-  --database-version=POSTGRES_16 \
-  --tier=db-f1-micro \
-  --region="$REGION" \
-  --storage-auto-increase
+if gcloud sql instances describe "$INSTANCE" >/dev/null 2>&1; then
+  echo "    instance already exists"
+else
+  # --edition=enterprise is required: the API otherwise defaults new instances to
+  # Enterprise Plus, where the cheap shared-core tiers like db-f1-micro are
+  # invalid and creation is rejected with "Invalid Tier".
+  gcloud sql instances create "$INSTANCE" \
+    --database-version=POSTGRES_16 \
+    --edition=enterprise \
+    --tier=db-f1-micro \
+    --region="$REGION" \
+    --storage-auto-increase || {
+      echo "" >&2
+      echo "Cloud SQL instance creation FAILED — stopping here." >&2
+      echo "Nothing after this point can work without the database." >&2
+      exit 1
+    }
+fi
 
 say "Database and user"
-ok gcloud sql databases create "$DB_NAME" --instance="$INSTANCE"
+if ! gcloud sql databases describe "$DB_NAME" --instance="$INSTANCE" >/dev/null 2>&1; then
+  gcloud sql databases create "$DB_NAME" --instance="$INSTANCE" || exit 1
+fi
 
 DB_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)"
 ok gcloud sql users create "$DB_USER" --instance="$INSTANCE" --password="$DB_PASSWORD"
 # If the user already existed the create failed and the generated password is not
 # in effect, so set it explicitly to keep the secret below truthful.
-ok gcloud sql users set-password "$DB_USER" --instance="$INSTANCE" --password="$DB_PASSWORD"
+gcloud sql users set-password "$DB_USER" --instance="$INSTANCE" --password="$DB_PASSWORD" || exit 1
 
 # ── 4. Secrets ────────────────────────────────────────────────────────────────
-# Note there is no Gemini key here: the deploy uses Vertex AI, authenticating as
-# the service account, so there is no model credential to store at all.
 say "Secrets"
 put_secret() {
   local name="$1" value="$2"
@@ -95,6 +112,13 @@ if ! gcloud secrets describe heykels-google-id >/dev/null 2>&1; then
   put_secret heykels-google-id     "REPLACE_WITH_OAUTH_CLIENT_ID"
   put_secret heykels-google-secret "REPLACE_WITH_OAUTH_CLIENT_SECRET"
   NEED_OAUTH=1
+fi
+
+# The Gemini API key. The Interactions API exists only on the Gemini API
+# endpoint — Vertex AI 404s on /interactions — so a key is required.
+if ! gcloud secrets describe heykels-gemini-key >/dev/null 2>&1; then
+  put_secret heykels-gemini-key "REPLACE_WITH_GEMINI_API_KEY"
+  NEED_GEMINI=1
 fi
 
 # ── 5. IAM ────────────────────────────────────────────────────────────────────
@@ -124,9 +148,20 @@ cat <<EOF
 
     Cloud SQL connection name:  ${PROJECT}:${REGION}:${INSTANCE}
     Database / user:            ${DB_NAME} / ${DB_USER}
-    Model access:               Vertex AI (no API key needed)
+    Model access:               Gemini API (key stored in Secret Manager)
 
 EOF
+
+if [ "${NEED_GEMINI:-0}" = "1" ]; then
+  cat <<EOF2
+    ⚠ The Gemini key secret holds a placeholder. Create a key (Cloud Console →
+      APIs & Services → Credentials → Create credentials → API key, with the
+      Gemini API enabled), then:
+
+        printf '%s' YOUR_GEMINI_KEY | gcloud secrets versions add heykels-gemini-key --data-file=-
+
+EOF2
+fi
 
 if [ "${NEED_OAUTH:-0}" = "1" ]; then
   cat <<EOF

@@ -174,6 +174,9 @@ function unwrap<T extends { ok: boolean }>(
 ): T | { ok: false; reason: string; kind: "degraded" } {
   if (settled.status === "fulfilled") return settled.value;
   const reason = (settled.reason as Error)?.message ?? fallback;
+  // Rejections land here only when a leg threw past its own catch (timeouts,
+  // mostly) — the legs' catch blocks never see those, so log them here.
+  console.error(`[heykels] leg rejected (${fallback}):`, reason);
   return { ok: false, reason, kind: "degraded" };
 }
 

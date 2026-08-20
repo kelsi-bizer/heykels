@@ -22,6 +22,18 @@ say() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 
 CONNECTION="${PROJECT}:${REGION}:${INSTANCE}"
 
+# Preflight: the proxy starts happily even when the instance doesn't exist, and the
+# failure then surfaces later, tangled up in npm output. Better to stop now with a
+# message that names the actual problem.
+say "Checking the Cloud SQL instance exists"
+STATE="$(gcloud sql instances describe "$INSTANCE" --project="$PROJECT" --format='value(state)' 2>/dev/null || true)"
+if [ -z "$STATE" ]; then
+  echo "Cloud SQL instance '$INSTANCE' does not exist in project '$PROJECT'." >&2
+  echo "Run ./scripts/setup-gcloud.sh $PROJECT first." >&2
+  exit 1
+fi
+echo "    $INSTANCE is $STATE"
+
 say "Fetching the database password from Secret Manager"
 DB_PASSWORD="$(gcloud secrets versions access latest \
   --secret=heykels-db-password --project="$PROJECT")"
@@ -50,6 +62,10 @@ for _ in $(seq 1 30); do
 done
 
 say "Installing dependencies (first run only, ~1 minute)"
+# npm writes every package twice: once to its cache, once to node_modules. Cloud
+# Shell's home directory is capped at 5GB and fills fast, so the cache goes to
+# /tmp, which doesn't count against that quota.
+export npm_config_cache="${npm_config_cache:-/tmp/.npm-heykels}"
 [ -d node_modules ] || npm ci --no-audit --no-fund
 
 say "Applying migrations"

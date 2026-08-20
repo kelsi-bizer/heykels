@@ -1,14 +1,26 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * REQUIREMENT 1 — Gemini 3.5 or newer, reachable through either the Gemini API or
- * Vertex AI. Both are the same GenAI SDK surface, so the pipeline code is identical
- * and only this constructor differs.
+ * REQUIREMENT 1 — Gemini 3.5 or newer via the Gemini API.
  *
  * REQUIREMENT 2 — the Google GenAI SDK is the agent framework the whole pipeline is
  * built on: Interactions API, function calling, streaming and multi-turn tool loops.
+ *
+ * On the Vertex switch below: it constructs a valid client, but the Interactions
+ * API this pipeline uses exists ONLY on generativelanguage.googleapis.com — the
+ * /interactions path 404s on aiplatform.googleapis.com. Verified empirically
+ * (and once, painfully, in production: every call failed and searches hung).
+ * The flag stays for the day Google ships Interactions on Vertex; until then a
+ * loud warning beats a silent hang.
  */
 export const useVertex = process.env.GOOGLE_GENAI_USE_VERTEXAI === "true";
+
+if (useVertex) {
+  console.warn(
+    "[heykels] GOOGLE_GENAI_USE_VERTEXAI=true, but the Interactions API is not served by Vertex AI. " +
+      "Model calls will fail with 404s. Use GEMINI_API_KEY instead.",
+  );
+}
 
 let cached: GoogleGenAI | null = null;
 

@@ -35,11 +35,8 @@ If something goes wrong, skip to [When something breaks](#when-something-breaks)
 ```bash
 cd ~ && rm -rf heykels && \
 git clone https://github.com/kelsi-bizer/heykels.git && \
-cd heykels && \
-git checkout claude/heykels-ai-search-engine-rozsz3
+cd heykels
 ```
-
-You should see `Switched to branch 'claude/heykels-ai-search-engine-rozsz3'`.
 
 > Cloud Shell may ask you to authorize Git access to GitHub. Say yes.
 
@@ -115,7 +112,17 @@ gcloud builds submit --config cloudbuild.yaml
 Service URL: https://heykels-484024024830.us-central1.run.app
 ```
 
-**Copy that URL.** You need it for the next step.
+**Copy that URL.** You need it for the next two things.
+
+First, tell the app its own address — sign-in and the Workspace connection both
+depend on it. Swap `YOUR-URL` for the URL from above (keep the `https://`):
+
+```bash
+gcloud run services update heykels --region=us-central1 --project=heykels \
+  --update-env-vars AUTH_URL=https://YOUR-URL
+```
+
+This survives every later deploy — you set it once.
 
 ---
 
@@ -170,11 +177,15 @@ Run `./scripts/migrate-cloud.sh` as well, but only if the database schema change
 |---|---|
 | `billing account ... not found` in Step 3 | Billing isn't enabled. See *Before you start*. |
 | Step 3 seems frozen | Normal. Creating the database really does take ~8 minutes with no output. |
+| `Invalid Tier (db-f1-micro) for (ENTERPRISE_PLUS) Edition` | You're on an old copy of the setup script. Run `cd ~/heykels && git pull`, then re-run Step 3. |
+| `ENOSPC: no space left on device` | Cloud Shell's 5GB disk is full. Free space with `npm cache clean --force; rm -rf ~/heykels/node_modules`, then re-run the failed step. |
+| A later command complains about a missing project | Cloud Shell restarted (it does after ~20 min idle) and forgot the project. Run `cd ~/heykels && gcloud config set project heykels` and carry on. Your files survive restarts; the setting doesn't. |
 | `PERMISSION_DENIED` in Step 6 | The permission grants in Step 3 didn't finish. Re-run `./scripts/setup-gcloud.sh heykels`. |
 | `Error 400: redirect_uri_mismatch` at sign-in | Step 7 is missing, has a typo, or hasn't propagated. Check both URIs, and that there's no trailing slash. |
 | Signed in, but bounced back to the login page | Usually the cookie. Try an incognito window. |
 | "Access blocked: app not verified" | Expected. Your Google account must be on the **Test users** list under *Google Auth Platform → Audience*. |
 | Search spins, then errors | The Gemini call failed. Check the logs, below. |
+| Search starts but the legs never print anything | The service is pointed at Vertex AI, which doesn't serve the Interactions API. Set `GOOGLE_GENAI_USE_VERTEXAI=false` and attach the `heykels-gemini-key` secret as `GEMINI_API_KEY`. |
 | Workspace disconnects after about a week | Expected, and not a bug — Google expires tokens every 7 days for unverified apps. Click **Reconnect**. |
 
 **To read the application logs:**
@@ -198,6 +209,6 @@ gcloud run services describe heykels --region us-central1 \
 |---|---|
 | **Cloud Run** | Runs the app. Scales to zero when nobody's using it, so idle costs nothing. |
 | **Cloud SQL** | PostgreSQL. Holds your searches, and a fast local copy of your memory files. |
-| **Vertex AI** | Serves `gemini-3.5-flash`. Authenticates as the service account — no API key anywhere. |
+| **Gemini API** | Serves `gemini-3.5-flash`, via the key in Secret Manager. (Vertex AI can't serve this app: it doesn't host the Interactions API the pipeline uses.) |
 | **Secret Manager** | Holds the five secrets. Never in the container image, never in build logs. |
 | **Your Google Drive** | The real home of your memory. Markdown files you can read, edit or delete yourself. |
