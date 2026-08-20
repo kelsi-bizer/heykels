@@ -112,7 +112,17 @@ gcloud builds submit --config cloudbuild.yaml
 Service URL: https://heykels-484024024830.us-central1.run.app
 ```
 
-**Copy that URL.** You need it for the next step.
+**Copy that URL.** You need it for the next two things.
+
+First, tell the app its own address — sign-in and the Workspace connection both
+depend on it. Swap `YOUR-URL` for the URL from above (keep the `https://`):
+
+```bash
+gcloud run services update heykels --region=us-central1 --project=heykels \
+  --update-env-vars AUTH_URL=https://YOUR-URL
+```
+
+This survives every later deploy — you set it once.
 
 ---
 

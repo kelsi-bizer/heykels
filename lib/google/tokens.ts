@@ -9,12 +9,28 @@ export interface WorkspaceContext {
   driveStartPageToken: string | null;
 }
 
+/**
+ * The Workspace callback URL. GOOGLE_OAUTH_REDIRECT_URI wins when set, but the
+ * usual case derives it from AUTH_URL — one less deploy-time variable, and one
+ * that was in fact forgotten on the first real deployment: without a redirect_uri
+ * Google rejects the consent flow with "Missing required parameter".
+ */
+function workspaceRedirectUri(): string | undefined {
+  if (process.env.GOOGLE_OAUTH_REDIRECT_URI) return process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  const base = process.env.AUTH_URL;
+  if (!base) return undefined;
+  try {
+    return new URL("/api/google/callback", base).toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export function oauthClient(): OAuth2Client {
   const clientId = process.env.AUTH_GOOGLE_ID;
   const clientSecret = process.env.AUTH_GOOGLE_SECRET;
-  const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI;
   if (!clientId || !clientSecret) throw new Error("Google OAuth client is not configured.");
-  return new OAuth2Client({ clientId, clientSecret, redirectUri });
+  return new OAuth2Client({ clientId, clientSecret, redirectUri: workspaceRedirectUri() });
 }
 
 /**
