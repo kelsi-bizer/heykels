@@ -45,7 +45,7 @@ const SCHEMA = {
   required: ["upserts"],
 } as const;
 
-interface Upsert {
+export interface Upsert {
   path: string;
   title: string;
   tags?: string[];
@@ -53,6 +53,8 @@ interface Upsert {
   facts: string[];
   openQuestions?: string[];
 }
+
+export { SCHEMA as UPSERT_SCHEMA };
 
 /**
  * Leg D. Runs after the answer has been delivered, never in front of it.
@@ -96,15 +98,27 @@ export async function writeMemoryFromTurn(
   return written;
 }
 
-async function applyUpsert(
+export async function applyUpsert(
   userId: string,
   client: NonNullable<Awaited<ReturnType<typeof getWorkspaceContext>>>["client"],
   folderId: string,
   path: string,
   u: Upsert,
 ) {
-  const incoming = buildDocument(path, u);
+  return applyDocument(userId, client, folderId, path, buildDocument(path, u));
+}
 
+/**
+ * Writes one memory document to Drive and the mirror, merging into any existing
+ * document at the path. Shared by the turn writer, the importer, and new notes.
+ */
+export async function applyDocument(
+  userId: string,
+  client: NonNullable<Awaited<ReturnType<typeof getWorkspaceContext>>>["client"],
+  folderId: string,
+  path: string,
+  incoming: MemoryDocument,
+) {
   const attempt = async (): Promise<boolean> => {
     const existingRow = await prisma.memoryDoc.findUnique({
       where: { userId_path: { userId, path } },
@@ -213,7 +227,7 @@ export function normalizePath(raw: string): string | null {
   return `${cleaned}.md`;
 }
 
-function parseUpserts(res: unknown): Upsert[] {
+export function parseUpserts(res: unknown): Upsert[] {
   const r = res as { steps?: { content?: { text?: string }[] }[]; output_text?: string };
   const text =
     (r?.steps ?? [])

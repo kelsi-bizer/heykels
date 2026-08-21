@@ -15,6 +15,8 @@ Every query fans out to two model calls **at the same time**:
 
 Both land in a **sandbox**, and a third call merges them into one answer. From there the agent can act in Google Workspace — but **every action that changes something is confirmed by you first**.
 
+**Memory can be imported, not just learned.** The Memory page takes a hand-written note, or a **ChatGPT / Claude data-export .zip** (also a bare `conversations.json`, or memory pasted into a `.txt`/`.md`). Imports are *distilled, never dumped*: only what **you** wrote in those conversations is read — assistant replies say nothing reliable about you — newest first, through the same fact-extraction contract the turn writer uses, so imported memory merges with searched memory instead of forming a second system. Big exports are processed newest-first up to a per-import budget; the result says what was skipped, and importing again continues.
+
 **Photo turns swap leg A.** Attach a photo from the search box (＋ → Camera on a phone opens the camera directly) and a vision call transcribes the document instead of searching the web — the page in your hand beats the internet's guess about it. Dated events found on the page (a school calendar, a schedule) become a batch of `calendar_create_event` proposals on the same approval card as every other write, and the transcription flows into memory like anything else the search learned.
 
 ```

@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { Shell } from "@/components/Shell";
+import { MemoryActions } from "@/components/MemoryActions";
 import { MemoryBrowser } from "@/components/MemoryBrowser";
 import { redirect } from "next/navigation";
 
@@ -57,6 +58,7 @@ export default async function MemoryPage() {
               </>
             )}
           </p>
+          <MemoryActions connected={Boolean(grant?.memoryFolderId)} />
           <MemoryBrowser
             docs={docs.map((d) => ({
               ...d,
