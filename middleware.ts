@@ -30,7 +30,7 @@ function hasSessionCookie(req: NextRequest): boolean {
  * sign-in dies with InvalidCheck. Everyone gets bounced to the canonical host
  * before any cookie is involved.
  */
-function canonicalHost(): string | null {
+export function canonicalHost(): string | null {
   const url = process.env.AUTH_URL;
   if (!url) return null;
   try {
@@ -40,11 +40,27 @@ function canonicalHost(): string | null {
   }
 }
 
+/**
+ * The host the BROWSER used, from the forwarded headers — never req.nextUrl.host.
+ * On Cloud Run the URL Next sees is the container-internal 0.0.0.0:8080, so
+ * comparing nextUrl.host against the canonical host mismatches on every request
+ * and 308s the canonical URL to itself, an infinite loop that took the whole
+ * site down. (Found live, the hard way.)
+ */
+export function requestHost(headers: Headers): string | null {
+  return headers.get("x-forwarded-host") ?? headers.get("host");
+}
+
+export function isForeignHost(headers: Headers, canonical: string | null): boolean {
+  const host = requestHost(headers);
+  return Boolean(canonical && host && host.toLowerCase() !== canonical.toLowerCase());
+}
+
 export default function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const canonical = canonicalHost();
-  if (canonical && req.nextUrl.host !== canonical) {
+  if (canonical && isForeignHost(req.headers, canonical)) {
     const url = req.nextUrl.clone();
     url.host = canonical;
     url.protocol = "https";
