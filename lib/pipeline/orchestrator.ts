@@ -1,6 +1,14 @@
 import { runWebLeg } from "./web-leg";
 import { runMemoryLeg } from "./memory-leg";
-import { buildSandbox, isEmpty, sandboxSources, type MemoryLeg, type WebLeg } from "./sandbox";
+import { runDocumentLeg } from "./document-leg";
+import {
+  buildSandbox,
+  isEmpty,
+  sandboxSources,
+  type DocumentLeg,
+  type MemoryLeg,
+  type WebLeg,
+} from "./sandbox";
 import { streamSynthesis, type PendingCall } from "./synthesis";
 import { retrieve } from "@/lib/memory/retrieve";
 import type { StreamEvent } from "./events";
@@ -13,6 +21,8 @@ export interface OrchestratorDeps {
   tools: WorkspaceTool[];
   /** Absent when the user has not connected Workspace; read tools then cannot run. */
   workspaceClient?: OAuth2Client | null;
+  /** A photo attached to this turn (base64). Replaces the web leg with document intake. */
+  attachment?: { data: string; mime: string } | null;
   signal?: AbortSignal;
   emit: (e: StreamEvent) => void;
 }
@@ -23,6 +33,8 @@ export interface OrchestratorResult {
   sandboxJson: unknown;
   interactionId: string | null;
   pendingCalls: PendingCall[];
+  /** Transcription of an attached photo, for the memory writer. Null on plain turns. */
+  documentMarkdown: string | null;
 }
 
 /** A leg that hangs shouldn't hold the whole answer hostage. */
@@ -30,18 +42,26 @@ const LEG_TIMEOUT_MS = Number(process.env.LEG_TIMEOUT_MS ?? 45_000);
 const MAX_READ_HOPS = 5;
 
 export async function runTurn(deps: OrchestratorDeps): Promise<OrchestratorResult> {
-  const { userId, query, tools, workspaceClient, signal, emit } = deps;
+  const { userId, query, tools, workspaceClient, attachment, signal, emit } = deps;
 
-  emit({ type: "stage_start", leg: "web" });
+  // A photo turn swaps leg A: reading the document the user is holding beats
+  // searching the web about it. The memory leg runs either way.
+  const primaryLeg: "web" | "document" = attachment ? "document" : "web";
+  emit({ type: "stage_start", leg: primaryLeg });
   emit({ type: "stage_start", leg: "memory" });
 
-  const webPromise = withTimeout(
-    runWebLeg(query, {
-      signal,
-      onLine: (line) => emit({ type: "stage_line", leg: "web", line }),
-    }),
+  const primaryPromise = withTimeout<DocumentLeg | WebLeg>(
+    attachment
+      ? runDocumentLeg(query, attachment, {
+          signal,
+          onLine: (line) => emit({ type: "stage_line", leg: "document", line }),
+        })
+      : runWebLeg(query, {
+          signal,
+          onLine: (line) => emit({ type: "stage_line", leg: "web", line }),
+        }),
     LEG_TIMEOUT_MS,
-    "web search timed out",
+    attachment ? "reading the photo timed out" : "web search timed out",
   );
 
   const memoryPromise = withTimeout(
@@ -58,16 +78,22 @@ export async function runTurn(deps: OrchestratorDeps): Promise<OrchestratorResul
 
   // allSettled, never all: one leg failing must not discard the other's work. A 429
   // on the memory leg should still produce a grounded web answer, and vice versa.
-  const [webSettled, memSettled] = await Promise.allSettled([webPromise, memoryPromise]);
+  const [primarySettled, memSettled] = await Promise.allSettled([primaryPromise, memoryPromise]);
 
-  const web: WebLeg = unwrap(webSettled, "web search failed");
   const memory: MemoryLeg = unwrap(memSettled, "memory search failed");
+  const document: DocumentLeg | undefined = attachment
+    ? (unwrap(primarySettled as PromiseSettledResult<DocumentLeg>, "could not read the photo") as DocumentLeg)
+    : undefined;
+  const web: WebLeg = attachment
+    ? { ok: false, reason: "photo attached — document intake ran instead", kind: "skipped" }
+    : unwrap(primarySettled as PromiseSettledResult<WebLeg>, "web search failed");
 
+  const primary = attachment ? document! : web;
   emit({
     type: "stage_done",
-    leg: "web",
-    status: web.ok ? "ok" : web.kind,
-    detail: web.ok ? undefined : web.reason,
+    leg: primaryLeg,
+    status: primary.ok ? "ok" : primary.kind,
+    detail: primary.ok ? undefined : primary.reason,
   });
   emit({
     type: "stage_done",
@@ -76,10 +102,14 @@ export async function runTurn(deps: OrchestratorDeps): Promise<OrchestratorResul
     detail: memory.ok ? undefined : memory.reason,
   });
 
-  const sandbox = buildSandbox(query, web, memory);
+  const sandbox = buildSandbox(query, web, memory, document);
 
   if (isEmpty(sandbox)) {
-    const reason = !web.ok ? web.reason : "both retrieval stages failed";
+    const reason = attachment && document && !document.ok
+      ? document.reason
+      : !web.ok
+        ? web.reason
+        : "both retrieval stages failed";
     emit({ type: "error", message: `Could not complete this search: ${reason}` });
     return {
       answer: "",
@@ -87,6 +117,7 @@ export async function runTurn(deps: OrchestratorDeps): Promise<OrchestratorResul
       sandboxJson: sandbox,
       interactionId: null,
       pendingCalls: [],
+      documentMarkdown: document?.ok ? document.markdown : null,
     };
   }
 
@@ -116,6 +147,7 @@ export async function runTurn(deps: OrchestratorDeps): Promise<OrchestratorResul
         sandboxJson: sandbox,
         interactionId: result.interactionId,
         pendingCalls: result.calls,
+        documentMarkdown: document?.ok ? document.markdown : null,
       };
     }
 
@@ -165,6 +197,7 @@ export async function runTurn(deps: OrchestratorDeps): Promise<OrchestratorResul
     sandboxJson: sandbox,
     interactionId: result.interactionId,
     pendingCalls: [],
+    documentMarkdown: document?.ok ? document.markdown : null,
   };
 }
 

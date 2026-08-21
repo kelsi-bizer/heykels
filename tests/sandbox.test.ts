@@ -4,6 +4,7 @@ import {
   isEmpty,
   renderSandbox,
   sandboxSources,
+  type DocumentLeg,
   type MemoryLeg,
   type WebLeg,
 } from "@/lib/pipeline/sandbox";
@@ -74,6 +75,48 @@ describe("sandbox", () => {
           buildSandbox("q", web, { ok: false, reason: "boom", kind: "degraded" }),
         ),
       ).toContain("Personal context: unavailable");
+    });
+  });
+
+  describe("document turns", () => {
+    const doc: DocumentLeg = {
+      ok: true,
+      title: "Lincoln Elementary 2026–27 (Ava)",
+      kind: "calendar",
+      markdown: "## August\n- Aug 25 First day of school",
+      events: [
+        { title: "First day of school", date: "2026-08-25", description: "Ava" },
+        { title: "Fall break", date: "2026-10-12", endDate: "2026-10-13" },
+      ],
+    };
+    const webSkipped: WebLeg = { ok: false, reason: "photo attached", kind: "skipped" };
+
+    it("keeps a photo turn non-empty even though the web leg is skipped", () => {
+      expect(isEmpty(buildSandbox("q", webSkipped, skipped, doc))).toBe(false);
+      expect(
+        isEmpty(
+          buildSandbox("q", webSkipped, skipped, { ok: false, reason: "blurry", kind: "degraded" }),
+        ),
+      ).toBe(true);
+    });
+
+    it("renders the transcription and instructs a full batch of calendar proposals", () => {
+      const text = renderSandbox(buildSandbox("add these", webSkipped, skipped, doc));
+      expect(text).toContain("Lincoln Elementary");
+      expect(text).toContain("First day of school · 2026-08-25");
+      expect(text).toContain("Fall break · 2026-10-12 → 2026-10-13");
+      expect(text).toContain("calendar_create_event");
+      expect(text).toContain("do not ask first");
+      // A deliberately skipped web leg must not make the answer apologise about
+      // being unable to check live sources.
+      expect(text).not.toContain("could not check live sources");
+    });
+
+    it("says plainly when the photo could not be read", () => {
+      const text = renderSandbox(
+        buildSandbox("q", webSkipped, skipped, { ok: false, reason: "too blurry", kind: "degraded" }),
+      );
+      expect(text).toContain("could not be read (too blurry)");
     });
   });
 });

@@ -15,6 +15,8 @@ Every query fans out to two model calls **at the same time**:
 
 Both land in a **sandbox**, and a third call merges them into one answer. From there the agent can act in Google Workspace — but **every action that changes something is confirmed by you first**.
 
+**Photo turns swap leg A.** Attach a photo from the search box (＋ → Camera on a phone opens the camera directly) and a vision call transcribes the document instead of searching the web — the page in your hand beats the internet's guess about it. Dated events found on the page (a school calendar, a schedule) become a batch of `calendar_create_event` proposals on the same approval card as every other write, and the transcription flows into memory like anything else the search learned.
+
 ```
 query ─┬─► leg A: web-grounded    ─┐
        └─► leg B: memory-grounded ─┴─► sandbox ─► synthesis ─► answer + tools

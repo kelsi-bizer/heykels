@@ -44,13 +44,22 @@ export const calendarTools: WorkspaceTool[] = [
   },
   {
     name: "calendar_create_event",
-    description: "Create a calendar event and optionally invite guests.",
+    description:
+      "Create a calendar event and optionally invite guests. For all-day events (school holidays, deadlines) set allDay: true and pass plain dates.",
     parameters: {
       type: "object",
       properties: {
         summary: { type: "string", description: "Event title." },
-        start: { type: "string", description: "ISO 8601 start, with timezone offset." },
-        end: { type: "string", description: "ISO 8601 end, with timezone offset." },
+        start: {
+          type: "string",
+          description: "ISO 8601 date-time with timezone offset — or YYYY-MM-DD when allDay is true.",
+        },
+        end: {
+          type: "string",
+          description:
+            "ISO 8601 date-time — or YYYY-MM-DD when allDay is true. For a single all-day date, pass the same date as start.",
+        },
+        allDay: { type: "boolean", description: "True for date-only events with no time." },
         description: { type: "string" },
         attendees: { type: "array", items: { type: "string" }, description: "Guest email addresses." },
       },
@@ -58,7 +67,7 @@ export const calendarTools: WorkspaceTool[] = [
     },
     requiresConfirmation: true,
     scopeGroup: "calendar",
-    summarize: (a) => `Create “${str(a.summary)}” on ${str(a.start)}`,
+    summarize: (a) => `Create “${str(a.summary)}” on ${str(a.start).slice(0, 16)}`,
     async execute(auth, args) {
       const cal = google.calendar({ version: "v3", auth });
       const attendees = Array.isArray(args.attendees)
@@ -67,14 +76,33 @@ export const calendarTools: WorkspaceTool[] = [
             .map((email) => ({ email }))
         : undefined;
 
+      // Google models all-day events as {date} with an EXCLUSIVE end date, which no
+      // model reliably produces — so "same date in and out" is accepted here and the
+      // exclusive end is computed. Passing dateTime for a date (or vice versa) is a
+      // 400 from Google, hence the explicit branch.
+      const allDay = args.allDay === true || /^\d{4}-\d{2}-\d{2}$/.test(str(args.start));
+      let start: { date: string } | { dateTime: string };
+      let end: { date: string } | { dateTime: string };
+      if (allDay) {
+        const s = str(args.start).slice(0, 10);
+        const eIn = (str(args.end) || s).slice(0, 10);
+        const exclusive = new Date(`${eIn}T00:00:00Z`);
+        exclusive.setUTCDate(exclusive.getUTCDate() + 1);
+        start = { date: s };
+        end = { date: exclusive.toISOString().slice(0, 10) };
+      } else {
+        start = { dateTime: str(args.start) };
+        end = { dateTime: str(args.end) };
+      }
+
       const res = await cal.events.insert({
         calendarId: "primary",
         sendUpdates: attendees?.length ? "all" : "none",
         requestBody: {
           summary: str(args.summary),
           description: str(args.description) || undefined,
-          start: { dateTime: str(args.start) },
-          end: { dateTime: str(args.end) },
+          start,
+          end,
           attendees,
         },
       });

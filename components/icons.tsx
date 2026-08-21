@@ -48,6 +48,9 @@ export const ThumbDownIcon = ({ size = 17 }: P) => (
 export const CopyIcon = ({ size = 17 }: P) => (
   <svg {...box(size)} aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /></svg>
 );
+export const CameraIcon = ({ size = 16 }: P) => (
+  <svg {...box(size)} aria-hidden="true"><path d="M9.4 4l-1.7 2H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.7L14.6 4H9.4zM12 18.5A4.5 4.5 0 1 1 12 9.5a4.5 4.5 0 0 1 0 9zm0-2A2.5 2.5 0 1 0 12 11.5a2.5 2.5 0 0 0 0 5z" /></svg>
+);
 export const PencilIcon = ({ size = 15 }: P) => (
   <svg {...box(size)} aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
 );

@@ -15,20 +15,49 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+const IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+/** ~4MB of base64 ≈ 3MB image — far above what the client's downscale produces. */
+const MAX_IMAGE_B64 = 4_000_000;
+
+function validateImage(
+  image?: { data?: string; mime?: string },
+): { data: string; mime: string } | null {
+  if (!image?.data || !image.mime) return null;
+  if (!IMAGE_MIMES.has(image.mime)) return null;
+  if (image.data.length > MAX_IMAGE_B64) return null;
+  // Sanity: base64, not a data: URL and not raw bytes.
+  if (!/^[A-Za-z0-9+/=]+$/.test(image.data.slice(0, 100))) return null;
+  return { data: image.data, mime: image.mime };
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return new Response("unauthenticated", { status: 401 });
 
   const { id: searchId } = await params;
-  const { query } = (await req.json()) as { query?: string };
-  if (!query?.trim()) return new Response("query required", { status: 400 });
+  const { query, image } = (await req.json()) as {
+    query?: string;
+    image?: { data?: string; mime?: string };
+  };
+
+  // A photo with no words is a legitimate turn ("here's the school calendar" is
+  // implied); text-only turns still require text.
+  const attachment = validateImage(image);
+  if (image && !attachment) return new Response("invalid image", { status: 400 });
+  if (!query?.trim() && !attachment) return new Response("query required", { status: 400 });
+  const queryText = query?.trim() || "(photo attached)";
 
   const userId = session.user.id;
   const search = await prisma.search.findFirst({ where: { id: searchId, userId } });
   if (!search) return new Response("not found", { status: 404 });
 
   const turn = await prisma.turn.create({
-    data: { searchId, query: query.trim() },
+    data: {
+      searchId,
+      query: queryText,
+      imageData: attachment?.data ?? null,
+      imageMime: attachment?.mime ?? null,
+    },
     select: { id: true },
   });
 
@@ -54,9 +83,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         const result = await runTurn({
           userId,
-          query: query.trim(),
+          query: queryText,
           tools,
           workspaceClient: ws?.client ?? null,
+          attachment,
           signal: req.signal,
           emit,
         });
@@ -121,9 +151,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // a bare floating promise is killed when the serverless response closes, and
         // the write would silently never happen.
         if (result.answer && ws) {
+          // A transcribed document is the richest thing this turn learned — hand it
+          // to the writer alongside the answer so the sheet itself lands in memory.
+          const learned = result.documentMarkdown
+            ? `${result.answer}\n\n--- Transcribed from the user's photo ---\n${result.documentMarkdown}`
+            : result.answer;
           after(async () => {
             try {
-              const paths = await writeMemoryFromTurn(userId, query.trim(), result.answer);
+              const paths = await writeMemoryFromTurn(userId, queryText, learned);
               if (paths.length) {
                 // The stream is gone by now; the UI picks this up on refresh.
                 await prisma.turn.update({

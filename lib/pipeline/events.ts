@@ -6,7 +6,7 @@
  * gate), not around how the model happens to emit tokens.
  */
 
-export type LegName = "web" | "memory";
+export type LegName = "web" | "memory" | "document";
 export type LegStatus = "ok" | "degraded" | "skipped";
 
 export interface SourceRef {
