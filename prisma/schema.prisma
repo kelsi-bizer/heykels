@@ -118,6 +118,11 @@ model Turn {
   query  String @db.Text
   answer String @db.Text @default("")
 
+  // An attached photo (base64), e.g. a document the user snapped with the camera.
+  // Stored on the turn so the thread still shows what was asked about after a refresh.
+  imageData String? @db.Text
+  imageMime String?
+
   // Citations surfaced to the UI, from url_citation annotations.
   sources Json?
   // Both leg results. Also the replay fallback when a stored interaction 404s.

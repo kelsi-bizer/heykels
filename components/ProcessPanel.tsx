@@ -28,19 +28,25 @@ const DOT: Record<LegState["status"], string> = {
 export function ProcessPanel({
   web,
   memory,
+  document: doc,
   merged,
   defaultOpen,
 }: {
   web: LegState;
   memory: LegState;
+  /** Replaces the web leg on turns that carried a photo. */
+  document?: LegState;
   merged: boolean;
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const hasDoc = doc ? doc.status !== "idle" : false;
 
   const label = merged
     ? "Merged 2 sources of context"
-    : "Running two searches in parallel…";
+    : hasDoc
+      ? "Reading your photo and checking memory…"
+      : "Running two searches in parallel…";
 
   return (
     <div className={`proc${open ? " open" : ""}`}>
@@ -51,7 +57,11 @@ export function ProcessPanel({
       </button>
       <div className="proc-body">
         <div className="legs">
-          <Leg title="Leg A · web" state={web} />
+          {hasDoc && doc ? (
+            <Leg title="Leg A · your photo" state={doc} />
+          ) : (
+            <Leg title="Leg A · web" state={web} />
+          )}
           <Leg title="Leg B · your memory" state={memory} />
         </div>
         <div className="merge">

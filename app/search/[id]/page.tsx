@@ -39,6 +39,9 @@ export default async function SearchThreadPage({
     query: t.query,
     answer: t.answer,
     sources: (t.sources as SourceRef[] | null) ?? [],
+    // A lightweight flag, not the image itself — re-serving megabytes of base64
+    // into every thread render is not worth a thumbnail after refresh.
+    hasImage: Boolean(t.imageMime),
   }));
 
   const firstName = (session.user.name ?? "there").split(" ")[0];

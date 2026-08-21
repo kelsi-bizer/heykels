@@ -5,7 +5,17 @@ import { useRouter } from "next/navigation";
 import { Markdown } from "./Markdown";
 import { ProcessPanel, type LegState } from "./ProcessPanel";
 import { ToolConfirmCard, type ToolDecision } from "./ToolConfirmCard";
-import { CopyIcon, SendIcon, Sparkle, ThumbDownIcon, ThumbUpIcon } from "./icons";
+import {
+  CameraIcon,
+  CopyIcon,
+  DocIcon,
+  PlusIcon,
+  SendIcon,
+  Sparkle,
+  ThumbDownIcon,
+  ThumbUpIcon,
+  XIcon,
+} from "./icons";
 import { NdjsonParser, type ProposedTool, type SourceRef, type StreamEvent } from "@/lib/pipeline/events";
 
 export interface InitialTurn {
@@ -13,6 +23,7 @@ export interface InitialTurn {
   query: string;
   answer: string;
   sources: SourceRef[];
+  hasImage?: boolean;
 }
 
 interface TurnState {
@@ -22,6 +33,7 @@ interface TurnState {
   sources: SourceRef[];
   web: LegState;
   memory: LegState;
+  document: LegState;
   merged: boolean;
   streaming: boolean;
   pending: ProposedTool[] | null;
@@ -29,9 +41,49 @@ interface TurnState {
   toolResults: { toolName: string; ok: boolean; summary: string }[];
   memoryUpdated: string[];
   error?: string;
+  /** Data URL of the photo sent this session; after a refresh only hasImage survives. */
+  imageUrl?: string | null;
+  hasImage?: boolean;
 }
 
 const idleLeg = (): LegState => ({ status: "idle", lines: [] });
+
+interface Attachment {
+  data: string; // bare base64
+  mime: string;
+  previewUrl: string; // data URL for the composer chip
+}
+
+/**
+ * Downscales a photo before upload: a 12MP camera shot is ~5MB, and the model needs
+ * nowhere near that to read a sheet of paper. Longest edge 1600px, JPEG. Files the
+ * canvas cannot decode (HEIC outside Safari) are sent as-is when small enough.
+ */
+async function prepareImage(file: File): Promise<Attachment | null> {
+  const toB64 = (dataUrl: string) => dataUrl.slice(dataUrl.indexOf(",") + 1);
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    return { data: toB64(dataUrl), mime: "image/jpeg", previewUrl: dataUrl };
+  } catch {
+    if (file.size > 3_000_000) return null;
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error("read failed"));
+      r.readAsDataURL(file);
+    });
+    return { data: toB64(dataUrl), mime: file.type || "image/jpeg", previewUrl: dataUrl };
+  }
+}
 
 const CHIPS = [
   "What's new in AI-native search this month?",
@@ -56,6 +108,7 @@ export function SearchApp({
       ...t,
       web: { status: "ok", lines: [] },
       memory: { status: "ok", lines: [] },
+      document: idleLeg(),
       merged: true,
       streaming: false,
       pending: null,
@@ -65,9 +118,13 @@ export function SearchApp({
   );
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [attached, setAttached] = useState<Attachment | null>(null);
+  const [attachOpen, setAttachOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
 
   // Abandoning a search should stop the upstream model call, not just hide it.
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -110,7 +167,10 @@ export function SearchApp({
             patch(idx, (t) => {
               const leg = t[e.leg];
               const next = { ...t, [e.leg]: { ...leg, status: e.status, detail: e.detail } } as TurnState;
-              next.merged = next.web.status !== "running" && next.memory.status !== "running";
+              next.merged =
+                next.web.status !== "running" &&
+                next.memory.status !== "running" &&
+                next.document.status !== "running";
               return next;
             });
             break;
@@ -151,25 +211,31 @@ export function SearchApp({
 
   const ask = useCallback(
     async (query: string) => {
-      if (!query.trim() || busy) return;
+      const image = attached;
+      if ((!query.trim() && !image) || busy) return;
       setBusy(true);
       setInput("");
+      setAttached(null);
+      setAttachOpen(false);
 
       const idx = turns.length;
       setTurns((prev) => [
         ...prev,
         {
           id: `pending-${idx}`,
-          query,
+          query: query.trim() || "(photo attached)",
           answer: "",
           sources: [],
           web: idleLeg(),
           memory: idleLeg(),
+          document: idleLeg(),
           merged: false,
           streaming: true,
           pending: null,
           toolResults: [],
           memoryUpdated: [],
+          imageUrl: image?.previewUrl ?? null,
+          hasImage: Boolean(image),
         },
       ]);
       requestAnimationFrame(toBottom);
@@ -183,7 +249,7 @@ export function SearchApp({
           const created = await fetch("/api/searches", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ title: query }),
+            body: JSON.stringify({ title: query.trim() || "Photo import" }),
             signal: controller.signal,
           });
           if (!created.ok) throw new Error("Could not start a new search");
@@ -197,7 +263,9 @@ export function SearchApp({
         const res = await fetch(`/api/search/${id}/turn`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify(
+            image ? { query, image: { data: image.data, mime: image.mime } } : { query },
+          ),
           signal: controller.signal,
         });
         await consume(res, idx);
@@ -211,8 +279,15 @@ export function SearchApp({
         router.refresh();
       }
     },
-    [busy, consume, patch, router, sid, toBottom, turns.length],
+    [attached, busy, consume, patch, router, sid, toBottom, turns.length],
   );
+
+  const onPickFile = useCallback(async (file: File | null | undefined) => {
+    setAttachOpen(false);
+    if (!file) return;
+    const prepared = await prepareImage(file);
+    if (prepared) setAttached(prepared);
+  }, []);
 
   const decide = useCallback(
     async (idx: number, decisions: ToolDecision[]) => {
@@ -280,15 +355,36 @@ export function SearchApp({
           {turns.map((t, i) => (
             <div className="turn" key={t.id}>
               <div className="q">
-                <div className="txt">{t.query}</div>
+                <div className="txt">
+                  {t.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={t.imageUrl}
+                      alt="Photo you attached"
+                      style={{
+                        display: "block",
+                        maxWidth: 220,
+                        maxHeight: 220,
+                        borderRadius: 12,
+                        marginBottom: t.query === "(photo attached)" ? 0 : 8,
+                      }}
+                    />
+                  ) : t.hasImage ? (
+                    <span className="tag" style={{ marginRight: 8 }}>📷 photo</span>
+                  ) : null}
+                  {t.query === "(photo attached)" && (t.imageUrl || t.hasImage) ? null : t.query}
+                </div>
               </div>
               <div className="a">
                 <Sparkle spinning={t.streaming} />
                 <div className="a-body">
-                  {(t.web.status !== "idle" || t.memory.status !== "idle") && (
+                  {(t.web.status !== "idle" ||
+                    t.memory.status !== "idle" ||
+                    t.document.status !== "idle") && (
                     <ProcessPanel
                       web={t.web}
                       memory={t.memory}
+                      document={t.document}
                       merged={t.merged}
                       defaultOpen={t.streaming && !t.merged}
                     />
@@ -365,11 +461,106 @@ export function SearchApp({
       </div>
 
       <div className="composer-dock">
-        <div className="composer">
+        <div className="composer" style={{ position: "relative" }}>
+          {/* Hidden pickers: `capture` opens the camera directly on phones. */}
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            hidden
+            onChange={(e) => {
+              void onPickFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={galleryRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              void onPickFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+
+          {attached && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: "100%",
+                left: 12,
+                marginBottom: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: 6,
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={attached.previewUrl}
+                alt="Attached photo"
+                style={{ height: 52, width: 52, objectFit: "cover", borderRadius: 8 }}
+              />
+              <span style={{ fontSize: 12.5, color: "var(--text-dim)", paddingRight: 2 }}>
+                Photo attached
+              </span>
+              <button
+                className="act"
+                aria-label="Remove photo"
+                onClick={() => setAttached(null)}
+                style={{ flex: "0 0 auto" }}
+              >
+                <XIcon size={14} />
+              </button>
+            </div>
+          )}
+
+          {attachOpen && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: "100%",
+                left: 8,
+                marginBottom: attached ? 76 : 8,
+                display: "flex",
+                flexDirection: "column",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                overflow: "hidden",
+                boxShadow: "0 4px 20px rgba(0,0,0,.25)",
+                zIndex: 5,
+              }}
+            >
+              <button className="menu-item" onClick={() => cameraRef.current?.click()}>
+                <CameraIcon size={16} /> Camera
+              </button>
+              <button className="menu-item" onClick={() => galleryRef.current?.click()}>
+                <DocIcon size={16} /> Upload a photo
+              </button>
+            </div>
+          )}
+
+          <button
+            className="act"
+            aria-label="Attach"
+            aria-expanded={attachOpen}
+            onClick={() => setAttachOpen((o) => !o)}
+            disabled={busy}
+            style={{ flex: "0 0 auto", alignSelf: "flex-end", marginBottom: 4 }}
+          >
+            <PlusIcon size={20} />
+          </button>
           <textarea
             ref={taRef}
             rows={1}
-            placeholder="Ask HeyKels"
+            placeholder={attached ? "Say anything about this photo (optional)" : "Ask HeyKels"}
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
@@ -383,7 +574,7 @@ export function SearchApp({
             }}
           />
           <button
-            className={`send${input.trim() ? " on" : ""}`}
+            className={`send${input.trim() || attached ? " on" : ""}`}
             onClick={() => void ask(input)}
             aria-label="Send"
             disabled={busy}
